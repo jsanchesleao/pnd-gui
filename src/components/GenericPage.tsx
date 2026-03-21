@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { createDecryptedStream, createEncryptedStream } from "../utils/crypto";
-import classes from "./GenericPage.module.css";
+import shared from "./shared.module.css";
 
 export type GenericPageProps = {};
 
@@ -78,40 +78,46 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
 
   if (!file) {
     return (
-      <div className={classes.container}>
-        <button onClick={handleChooseFile}>Choose File</button>
+      <div className={shared.container}>
+        <div className={shared.controls}>
+          <button onClick={handleChooseFile}>Choose File</button>
+        </div>
       </div>
     );
   }
 
   if (status === "idle") {
     return (
-      <div className={classes.container}>
+      <div className={shared.container}>
         <p>
           Enter password to <strong>{isEncrypt ? "encrypt" : "decrypt"}</strong>{" "}
           {file.name}
         </p>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button onClick={handleProcess}>
-          {isEncrypt ? "Encrypt" : "Decrypt"}
-        </button>
-        <button onClick={handleChooseFile}>Change File</button>
+        <div className={shared.controls}>
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <div className={shared["button-group"]}>
+            <button onClick={handleProcess}>
+              {isEncrypt ? "Encrypt" : "Decrypt"}
+            </button>
+            <button onClick={handleChooseFile}>Change File</button>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (status === "processing") {
     return (
-      <div className={classes.container}>
+      <div className={shared.container}>
         <p>
           {isEncrypt ? "Encrypting" : "Decrypting"} {file.name}{" "}
         </p>
-        <progress className={classes.progress} value={progress} max={100} />
+        <progress className={shared.progress} value={progress} max={100} />
         <button onClick={handleCancel}>Cancel</button>
       </div>
     );
@@ -119,22 +125,26 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
 
   if (status === "done") {
     return (
-      <div className={classes.container}>
-        <button onClick={handleChooseFile}>Choose File</button>
-        <p className={classes.text} data-text-type="success">
+      <div className={shared.container}>
+        <p className={shared.text} data-text-type="success">
           File {isEncrypt ? "encrypted" : "decrypted"} and saved successfully.
         </p>
+        <div className={shared.controls}>
+          <button onClick={handleChooseFile}>Choose File</button>
+        </div>
       </div>
     );
   }
 
   if (status === "error") {
     return (
-      <div className={classes.container}>
-        <button onClick={handleChooseFile}>Choose File</button>
-        <p className={classes.text} data-text-type="failure">
+      <div className={shared.container}>
+        <p className={shared.text} data-text-type="failure">
           Error: {errorMessage}
         </p>
+        <div className={shared.controls}>
+          <button onClick={handleChooseFile}>Choose File</button>
+        </div>
       </div>
     );
   }

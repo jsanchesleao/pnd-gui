@@ -1,0 +1,11 @@
+.video {
+    background: black;
+    object-fit: contain;
+    width: calc(100vw - 5rem);
+    height: 100%;
+}
+
+.video-wrapper {
+    overflow: auto;
+    display: grid;
+}

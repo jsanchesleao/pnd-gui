@@ -38,6 +38,37 @@ button {
     font-size: 1.2rem;
 }
 
+.nav {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-bottom: 1px solid oklch(70% 5% 75deg);
+    justify-content: center;
+}
+
+.nav-btn {
+    padding: 0.4rem 0.9rem;
+    font-size: 1rem;
+    background-color: transparent;
+    color: inherit;
+    border: 1px solid var(--clr-primary);
+    border-radius: 4px;
+
+    &:hover {
+        background-color: color-mix(
+            in oklch,
+            var(--clr-primary) 20%,
+            transparent
+        );
+        filter: none;
+    }
+
+    &.nav-btn--active {
+        background-color: var(--clr-primary);
+        color: white;
+    }
+}
+
 .encrypt-container {
     padding: 0.5rem;
     display: grid;
@@ -53,5 +84,16 @@ button {
 
     & button {
         grid-column: span 2;
+    }
+}
+
+.main-wrapper {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+
+    & > main {
+        align-self: end;
+        height: 100%;
     }
 }
