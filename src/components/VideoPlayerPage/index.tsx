@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { createDecryptedStream } from "../utils/crypto";
+import { createDecryptedStream } from "../../utils/crypto";
 import classes from "./VideoPlayerPage.module.css";
-import shared from "./shared.module.css";
+import shared from "../shared.module.css";
 
 type State =
   | { type: "idle" }

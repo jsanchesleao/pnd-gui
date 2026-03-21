@@ -1,12 +1,27 @@
 import { useRef, useState } from "react";
-import { createDecryptedStream, createEncryptedStream } from "../utils/crypto";
-import shared from "./shared.module.css";
+import {
+  createDecryptedStream,
+  createEncryptedStream,
+} from "../../utils/crypto";
+import shared from "../shared.module.css";
 
 export type GenericPageProps = {};
+
+const BLOCK_SIZE_OPTIONS = [
+  { label: "256 KB", value: 262144 },
+  { label: "512 KB", value: 524288 },
+  { label: "1 MB (default)", value: 1048576 },
+  { label: "2 MB", value: 2097152 },
+  { label: "4 MB", value: 4194304 },
+  { label: "8 MB", value: 8388608 },
+];
+
+const DEFAULT_BLOCK_SIZE = BLOCK_SIZE_OPTIONS[2];
 
 export const GenericPage: React.FC<GenericPageProps> = () => {
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
+  const [chunkSize, setChunkSize] = useState(DEFAULT_BLOCK_SIZE.value);
   const [status, setStatus] = useState<
     "idle" | "processing" | "done" | "error"
   >("idle");
@@ -55,6 +70,7 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
           ? createEncryptedStream(
               file.stream().pipeThrough(progressStream),
               password,
+              chunkSize,
             )
           : createDecryptedStream(
               file.stream().pipeThrough(progressStream),
@@ -100,6 +116,18 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          {isEncrypt && (
+            <select
+              value={chunkSize}
+              onChange={(e) => setChunkSize(Number(e.target.value))}
+            >
+              {BLOCK_SIZE_OPTIONS.map(({ label, value }) => (
+                <option key={value} value={value}>
+                  Block size: {label}
+                </option>
+              ))}
+            </select>
+          )}
           <div className={shared["button-group"]}>
             <button onClick={handleProcess}>
               {isEncrypt ? "Encrypt" : "Decrypt"}

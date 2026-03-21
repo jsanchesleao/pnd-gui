@@ -62,10 +62,10 @@ async function decryptBytes(encryptedBlob: Blob, password: string) {
 export function createEncryptedStream(
   stream: ReadableStream<Uint8Array>,
   password: string,
+  chunkSize: number = 1024 * 1024,
 ) {
-  const CHUNK_SIZE = 1024 * 1024;
   return stream
-    .pipeThrough(createFixedSizeFramesStream(CHUNK_SIZE))
+    .pipeThrough(createFixedSizeFramesStream(chunkSize))
     .pipeThrough(
       createFrameMapperStream(async (frame) => {
         const encryptedBlob = await encryptBytes(frame.data, password);

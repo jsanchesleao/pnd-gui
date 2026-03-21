@@ -1,9 +1,0 @@
-.options-wrapper,
-.action-wrapper {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.file-name {
-    padding-left: 1rem;
-}
