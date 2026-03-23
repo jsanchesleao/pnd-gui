@@ -3,8 +3,9 @@ import "./App.css";
 import { GenericPage } from "./components/GenericPage";
 import { VideoPlayerPage } from "./components/VideoPlayerPage";
 import { ImageViewerPage } from "./components/ImageViewerPage";
+import { GalleryPage } from "./components/GalleryPage";
 
-type Page = "main" | "video" | "image";
+type Page = "main" | "video" | "image" | "gallery";
 
 function App() {
   const [page, setPage] = useState<Page>("main");
@@ -30,11 +31,18 @@ function App() {
         >
           Image Viewer
         </button>
+        <button
+          className={page === "gallery" ? "nav-btn nav-btn--active" : "nav-btn"}
+          onClick={() => setPage("gallery")}
+        >
+          Gallery
+        </button>
       </nav>
       <main>
         {page === "main" && <GenericPage />}
         {page === "video" && <VideoPlayerPage />}
         {page === "image" && <ImageViewerPage />}
+        {page === "gallery" && <GalleryPage />}
       </main>
     </div>
   );

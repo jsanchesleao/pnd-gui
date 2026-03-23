@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/User/Documents/projects/pnd-gui/src -type f -name *.html -o -name *.json -o -name tsconfig*)"
+    ]
+  }
+}
