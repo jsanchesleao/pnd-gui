@@ -29,8 +29,15 @@ function getMimeType(filename: string): string {
   }
 }
 
-export const VideoPlayerPage: React.FC = () => {
-  const [state, setState] = useState<State>({ type: "idle" });
+interface Props {
+  initialFile?: File;
+  onReset?: () => void;
+}
+
+export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
+  const [state, setState] = useState<State>(
+    initialFile ? { type: "password", file: initialFile } : { type: "idle" },
+  );
   const [password, setPassword] = useState("");
   const objectUrlRef = useRef<string | null>(null);
 
@@ -144,7 +151,7 @@ export const VideoPlayerPage: React.FC = () => {
         />
         <div className={shared["button-group"]}>
           <button onClick={handlePlay}>Play</button>
-          <button onClick={handleChooseFile}>Change File</button>
+          <button onClick={onReset ?? handleChooseFile}>Change File</button>
         </div>
       </div>
     );
@@ -178,12 +185,13 @@ export const VideoPlayerPage: React.FC = () => {
           <button
             onClick={() => {
               revokeCurrentUrl();
-              setState({ type: "idle" });
+              if (onReset) onReset();
+              else setState({ type: "idle" });
             }}
           >
             Close Video
           </button>
-          <button onClick={handleChooseFile}>Choose another file</button>
+          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
         </div>
       </div>
     );
@@ -200,7 +208,7 @@ export const VideoPlayerPage: React.FC = () => {
         >
           Try again
         </button>
-        <button onClick={handleChooseFile}>Change File</button>
+        <button onClick={onReset ?? handleChooseFile}>Change File</button>
       </div>
     );
   }

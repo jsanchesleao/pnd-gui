@@ -45,8 +45,15 @@ function isImageFile(filename: string): boolean {
   return ext !== undefined && IMAGE_EXTENSIONS.has(ext);
 }
 
-export const GalleryPage: React.FC = () => {
-  const [state, setState] = useState<State>({ type: "idle" });
+interface Props {
+  initialFile?: File;
+  onReset?: () => void;
+}
+
+export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
+  const [state, setState] = useState<State>(
+    initialFile ? { type: "password", file: initialFile } : { type: "idle" },
+  );
   const [password, setPassword] = useState("");
   const objectUrlsRef = useRef<string[]>([]);
 
@@ -178,7 +185,7 @@ export const GalleryPage: React.FC = () => {
         />
         <div className={shared["button-group"]}>
           <button onClick={handleDecrypt}>View</button>
-          <button onClick={handleChooseFile}>Change File</button>
+          <button onClick={onReset ?? handleChooseFile}>Change File</button>
         </div>
       </div>
     );
@@ -229,12 +236,13 @@ export const GalleryPage: React.FC = () => {
           <button
             onClick={() => {
               revokeAllUrls();
-              setState({ type: "idle" });
+              if (onReset) onReset();
+              else setState({ type: "idle" });
             }}
           >
             Close
           </button>
-          <button onClick={handleChooseFile}>Choose another file</button>
+          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
         </div>
       </div>
     );
@@ -249,7 +257,7 @@ export const GalleryPage: React.FC = () => {
         <button onClick={() => setState({ type: "password", file: state.file })}>
           Try again
         </button>
-        <button onClick={handleChooseFile}>Change File</button>
+        <button onClick={onReset ?? handleChooseFile}>Change File</button>
       </div>
     );
   }

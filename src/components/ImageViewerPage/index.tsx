@@ -34,8 +34,15 @@ function getMimeType(filename: string): string {
   }
 }
 
-export const ImageViewerPage: React.FC = () => {
-  const [state, setState] = useState<State>({ type: "idle" });
+interface Props {
+  initialFile?: File;
+  onReset?: () => void;
+}
+
+export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
+  const [state, setState] = useState<State>(
+    initialFile ? { type: "password", file: initialFile } : { type: "idle" },
+  );
   const [password, setPassword] = useState("");
   const objectUrlRef = useRef<string | null>(null);
 
@@ -147,7 +154,7 @@ export const ImageViewerPage: React.FC = () => {
         />
         <div className={shared["button-group"]}>
           <button onClick={handleDecrypt}>View</button>
-          <button onClick={handleChooseFile}>Change File</button>
+          <button onClick={onReset ?? handleChooseFile}>Change File</button>
         </div>
       </div>
     );
@@ -178,12 +185,13 @@ export const ImageViewerPage: React.FC = () => {
           <button
             onClick={() => {
               revokeCurrentUrl();
-              setState({ type: "idle" });
+              if (onReset) onReset();
+              else setState({ type: "idle" });
             }}
           >
             Close Image
           </button>
-          <button onClick={handleChooseFile}>Choose another file</button>
+          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
         </div>
       </div>
     );

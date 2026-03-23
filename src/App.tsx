@@ -1,11 +1,9 @@
 import { useState } from "react";
 import "./App.css";
 import { GenericPage } from "./components/GenericPage";
-import { VideoPlayerPage } from "./components/VideoPlayerPage";
-import { ImageViewerPage } from "./components/ImageViewerPage";
-import { GalleryPage } from "./components/GalleryPage";
+import { PreviewPage } from "./components/PreviewPage";
 
-type Page = "main" | "video" | "image" | "gallery";
+type Page = "main" | "preview";
 
 function App() {
   const [page, setPage] = useState<Page>("main");
@@ -20,29 +18,15 @@ function App() {
           Encrypt / Decrypt
         </button>
         <button
-          className={page === "video" ? "nav-btn nav-btn--active" : "nav-btn"}
-          onClick={() => setPage("video")}
+          className={page === "preview" ? "nav-btn nav-btn--active" : "nav-btn"}
+          onClick={() => setPage("preview")}
         >
-          Video Player
-        </button>
-        <button
-          className={page === "image" ? "nav-btn nav-btn--active" : "nav-btn"}
-          onClick={() => setPage("image")}
-        >
-          Image Viewer
-        </button>
-        <button
-          className={page === "gallery" ? "nav-btn nav-btn--active" : "nav-btn"}
-          onClick={() => setPage("gallery")}
-        >
-          Gallery
+          Preview
         </button>
       </nav>
       <main>
         {page === "main" && <GenericPage />}
-        {page === "video" && <VideoPlayerPage />}
-        {page === "image" && <ImageViewerPage />}
-        {page === "gallery" && <GalleryPage />}
+        {page === "preview" && <PreviewPage />}
       </main>
     </div>
   );
