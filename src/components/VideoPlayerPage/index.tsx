@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createDecryptedStream } from "../../utils/crypto";
+import { getMimeType } from "../../utils/mediaTypes";
 import classes from "./VideoPlayerPage.module.css";
 import shared from "../shared.module.css";
 
@@ -9,25 +10,6 @@ type State =
   | { type: "loading"; file: File; progress: number }
   | { type: "playing"; file: File; objectUrl: string }
   | { type: "error"; file: File; message: string };
-
-function getMimeType(filename: string): string {
-  const base = filename.endsWith(".lock") ? filename.slice(0, -5) : filename;
-  const ext = base.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "mp4":
-      return "video/mp4";
-    case "webm":
-      return "video/webm";
-    case "mkv":
-      return "video/x-matroska";
-    case "mov":
-      return "video/quicktime";
-    case "avi":
-      return "video/x-msvideo";
-    default:
-      return "video/mp4";
-  }
-}
 
 interface Props {
   initialFile?: File;

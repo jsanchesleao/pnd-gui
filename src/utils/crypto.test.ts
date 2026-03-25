@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createDecryptedStream, createEncryptedStream } from "./crypto";
+import {
+  createDecryptedStream,
+  createEncryptedStream,
+  decryptBytesWithKey,
+  encryptBytesWithKey,
+  exportKeyToBase64,
+  generateFileKey,
+  importKeyFromBase64,
+} from "./crypto";
 
 function makeStream(data: Uint8Array): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -89,6 +97,47 @@ describe("createEncryptedStream + createDecryptedStream", () => {
       createEncryptedStream(makeStream(data), "password"),
     );
     expect(first).not.toEqual(second);
+  });
+});
+
+describe("generateFileKey / encryptBytesWithKey / decryptBytesWithKey", () => {
+  it("roundtrips data with a generated key", async () => {
+    const key = await generateFileKey();
+    const data = new Uint8Array([1, 2, 3, 4, 5]);
+    const encrypted = await encryptBytesWithKey(data, key);
+    const decrypted = await decryptBytesWithKey(encrypted, key);
+    expect(decrypted).toEqual(data);
+  });
+
+  it("returns null when decrypting with the wrong key", async () => {
+    const key1 = await generateFileKey();
+    const key2 = await generateFileKey();
+    const data = new Uint8Array([10, 20, 30]);
+    const encrypted = await encryptBytesWithKey(data, key1);
+    const result = await decryptBytesWithKey(encrypted, key2);
+    expect(result).toBeNull();
+  });
+
+  it("produces different ciphertext each time", async () => {
+    const key = await generateFileKey();
+    const data = new Uint8Array([1, 2, 3]);
+    const a = await encryptBytesWithKey(data, key);
+    const b = await encryptBytesWithKey(data, key);
+    expect(new Uint8Array(await a.arrayBuffer())).not.toEqual(
+      new Uint8Array(await b.arrayBuffer()),
+    );
+  });
+});
+
+describe("exportKeyToBase64 / importKeyFromBase64", () => {
+  it("roundtrips a key through base64 and can still decrypt", async () => {
+    const key = await generateFileKey();
+    const b64 = await exportKeyToBase64(key);
+    const imported = await importKeyFromBase64(b64);
+    const data = new Uint8Array([7, 8, 9]);
+    const encrypted = await encryptBytesWithKey(data, key);
+    const decrypted = await decryptBytesWithKey(encrypted, imported);
+    expect(decrypted).toEqual(data);
   });
 });
 

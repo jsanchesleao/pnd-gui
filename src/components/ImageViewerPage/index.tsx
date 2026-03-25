@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createDecryptedStream } from "../../utils/crypto";
+import { getMimeType } from "../../utils/mediaTypes";
 import classes from "./ImageViewerPage.module.css";
 import shared from "../shared.module.css";
 
@@ -9,30 +10,6 @@ type State =
   | { type: "loading"; file: File; progress: number }
   | { type: "viewing"; file: File; objectUrl: string }
   | { type: "error"; file: File; message: string };
-
-function getMimeType(filename: string): string {
-  const base = filename.endsWith(".lock") ? filename.slice(0, -5) : filename;
-  const ext = base.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "gif":
-      return "image/gif";
-    case "webp":
-      return "image/webp";
-    case "avif":
-      return "image/avif";
-    case "bmp":
-      return "image/bmp";
-    case "svg":
-      return "image/svg+xml";
-    default:
-      return "image/jpeg";
-  }
-}
 
 interface Props {
   initialFile?: File;
