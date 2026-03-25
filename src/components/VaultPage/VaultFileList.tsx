@@ -10,6 +10,7 @@ interface FileEntry {
 interface Props {
   entries: FileEntry[];
   onPreview: (uuid: string) => void;
+  onExport: (uuid: string) => void;
   onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null; // returns error message or null
   onMove: (uuid: string, newPath: string) => void;
@@ -18,6 +19,7 @@ interface Props {
 export const VaultFileList: React.FC<Props> = ({
   entries,
   onPreview,
+  onExport,
   onDelete,
   onRename,
   onMove,
@@ -38,6 +40,7 @@ export const VaultFileList: React.FC<Props> = ({
           uuid={uuid}
           entry={entry}
           onPreview={onPreview}
+          onExport={onExport}
           onDelete={onDelete}
           onRename={onRename}
           onMove={onMove}
@@ -51,6 +54,7 @@ interface ItemProps {
   uuid: string;
   entry: VaultIndexEntry;
   onPreview: (uuid: string) => void;
+  onExport: (uuid: string) => void;
   onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
@@ -60,6 +64,7 @@ const VaultFileItem: React.FC<ItemProps> = ({
   uuid,
   entry,
   onPreview,
+  onExport,
   onDelete,
   onRename,
   onMove,
@@ -142,6 +147,7 @@ const VaultFileItem: React.FC<ItemProps> = ({
           </span>
           <div className={classes["file-item-actions"]}>
             <button onClick={() => onPreview(uuid)} title="Preview">Preview</button>
+            <button onClick={() => onExport(uuid)} title="Save to disk">Save</button>
             <button
               onClick={() => { setRenameValue(entry.name); setRenaming(true); }}
               title="Rename"

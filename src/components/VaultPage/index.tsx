@@ -173,6 +173,26 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     updateVault({ ...vault });
   }
 
+  async function handleExport(uuid: string) {
+    if (!vault) return;
+    const entry = vault.index.entries[uuid];
+    if (!entry) return;
+    try {
+      const bytes = await decryptVaultFile(vault, uuid);
+      if (!bytes) {
+        alert("Could not decrypt file.");
+        return;
+      }
+      const saveHandle = await window.showSaveFilePicker({ suggestedName: entry.name });
+      const writable = await saveHandle.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async function handlePreview(uuid: string) {
     if (!vault) return;
     const entry = vault.index.entries[uuid];
@@ -259,6 +279,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onSave={handleSave}
           onClose={handleClose}
           onPreview={handlePreview}
+          onExport={handleExport}
           onDelete={handleDelete}
           onRename={handleRename}
           onMove={handleMove}

@@ -12,6 +12,7 @@ interface Props {
   onSave: () => void;
   onClose: () => void;
   onPreview: (uuid: string) => void;
+  onExport: (uuid: string) => void;
   onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
@@ -26,6 +27,7 @@ export const VaultBrowser: React.FC<Props> = ({
   onSave,
   onClose,
   onPreview,
+  onExport,
   onDelete,
   onRename,
   onMove,
@@ -57,6 +59,7 @@ export const VaultBrowser: React.FC<Props> = ({
         <VaultFileList
           entries={entries}
           onPreview={onPreview}
+          onExport={onExport}
           onDelete={onDelete}
           onRename={onRename}
           onMove={onMove}
