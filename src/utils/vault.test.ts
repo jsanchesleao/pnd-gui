@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { zipSync } from "fflate";
 import { encryptBytes } from "./crypto";
 import {
   VaultError,
@@ -17,45 +16,58 @@ import {
   type VaultIndex,
 } from "./vault";
 
-// Build a minimal .pnd Blob from a VaultIndex + masterPassword so we can test openVault.
-async function buildVaultBlob(
+// Fake FileSystemDirectoryHandle backed by an in-memory Map.
+function makeFakeDirHandle(): FileSystemDirectoryHandle {
+  const files = new Map<string, Uint8Array>();
+
+  function makeFakeFileHandle(name: string): FileSystemFileHandle {
+    return {
+      getFile: async () => new File([files.get(name) ?? new Uint8Array()], name),
+      createWritable: async () => {
+        const chunks: BlobPart[] = [];
+        return {
+          write: async (data: BlobPart) => { chunks.push(data); },
+          close: async () => {
+            files.set(name, new Uint8Array(await new Blob(chunks).arrayBuffer()));
+          },
+        };
+      },
+    } as unknown as FileSystemFileHandle;
+  }
+
+  return {
+    getFileHandle: async (name: string, opts?: { create?: boolean }) => {
+      if (!opts?.create && !files.has(name)) {
+        throw new DOMException(`${name} not found`, "NotFoundError");
+      }
+      if (!files.has(name)) files.set(name, new Uint8Array());
+      return makeFakeFileHandle(name);
+    },
+    removeEntry: async (name: string) => { files.delete(name); },
+  } as unknown as FileSystemDirectoryHandle;
+}
+
+// Build a vault directory pre-populated with an encrypted index and optional extra files.
+async function buildVaultDir(
   index: VaultIndex,
   masterPassword: string,
   extraFiles: Record<string, Uint8Array> = {},
-): Promise<Blob> {
+): Promise<FileSystemDirectoryHandle> {
+  const dirHandle = makeFakeDirHandle();
   const indexJson = new TextEncoder().encode(JSON.stringify(index));
   const encryptedIndex = await encryptBytes(indexJson, masterPassword);
   const encryptedIndexBytes = new Uint8Array(await encryptedIndex.arrayBuffer());
-
-  const zipInput: Record<string, [Uint8Array, { level: 0 | 9 }]> = {
-    "index.lock": [encryptedIndexBytes, { level: 9 }],
-    ...Object.fromEntries(
-      Object.entries(extraFiles).map(([k, v]) => [k, [v, { level: 0 }] as [Uint8Array, { level: 0 }]]),
-    ),
-  };
-  return new Blob([zipSync(zipInput)]);
-}
-
-function blobToFile(blob: Blob, name = "vault.pnd"): File {
-  return new File([blob], name);
-}
-
-// Fake FileSystemFileHandle backed by a mutable File reference.
-function makeFakeHandle(file: File): FileSystemFileHandle {
-  let currentFile = file;
-  const handle = {
-    getFile: async () => currentFile,
-    createWritable: async () => {
-      const chunks: Uint8Array[] = [];
-      return {
-        write: async (data: Uint8Array) => { chunks.push(data); },
-        close: async () => {
-          currentFile = new File([new Blob(chunks)], currentFile.name);
-        },
-      };
-    },
-  } as unknown as FileSystemFileHandle;
-  return handle;
+  const fh = await dirHandle.getFileHandle("index.lock", { create: true });
+  const w = await fh.createWritable();
+  await w.write(encryptedIndexBytes);
+  await w.close();
+  for (const [name, bytes] of Object.entries(extraFiles)) {
+    const fh2 = await dirHandle.getFileHandle(name, { create: true });
+    const w2 = await fh2.createWritable();
+    await w2.write(bytes);
+    await w2.close();
+  }
+  return dirHandle;
 }
 
 // ── openVault ──────────────────────────────────────────────────────────────
@@ -63,52 +75,46 @@ function makeFakeHandle(file: File): FileSystemFileHandle {
 describe("openVault", () => {
   it("opens a valid vault", async () => {
     const index: VaultIndex = { version: 1, entries: {} };
-    const blob = await buildVaultBlob(index, "secret");
-    const handle = makeFakeHandle(blobToFile(blob));
-    const vault = await openVault(handle, "secret");
+    const dirHandle = await buildVaultDir(index, "secret");
+    const vault = await openVault(dirHandle, "secret");
     expect(vault.index.version).toBe(1);
     expect(vault.modified).toBe(false);
   });
 
   it("throws WRONG_PASSWORD on bad password", async () => {
-    const blob = await buildVaultBlob({ version: 1, entries: {} }, "correct");
-    const handle = makeFakeHandle(blobToFile(blob));
-    await expect(openVault(handle, "wrong")).rejects.toThrow(VaultError);
-    await expect(openVault(handle, "wrong")).rejects.toMatchObject({ code: "WRONG_PASSWORD" });
+    const dirHandle = await buildVaultDir({ version: 1, entries: {} }, "correct");
+    await expect(openVault(dirHandle, "wrong")).rejects.toThrow(VaultError);
+    await expect(openVault(dirHandle, "wrong")).rejects.toMatchObject({ code: "WRONG_PASSWORD" });
   });
 
-  it("throws INVALID_FORMAT on non-ZIP data", async () => {
-    const handle = makeFakeHandle(new File([new Uint8Array([1, 2, 3])], "bad.pnd"));
-    await expect(openVault(handle, "pw")).rejects.toMatchObject({ code: "INVALID_FORMAT" });
+  it("throws INVALID_FORMAT when index.lock is missing", async () => {
+    const dirHandle = makeFakeDirHandle();
+    await expect(openVault(dirHandle, "pw")).rejects.toMatchObject({ code: "INVALID_FORMAT" });
   });
 });
 
 // ── addFileToVault ─────────────────────────────────────────────────────────
 
 describe("addFileToVault", () => {
-  it("adds an entry to the index and pendingFiles", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+  it("adds an entry to the index and writes to directory", async () => {
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const data = new Uint8Array([1, 2, 3]);
     const uuid = await addFileToVault(vault, data, "test.jpg", "photos");
     expect(vault.index.entries[uuid]).toBeDefined();
     expect(vault.index.entries[uuid].name).toBe("test.jpg");
     expect(vault.index.entries[uuid].path).toBe("photos");
-    expect(vault.pendingFiles.has(uuid)).toBe(true);
     expect(vault.modified).toBe(true);
   });
 
   it("auto-suffixes duplicate names in the same path", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "");
     const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "img.jpg", "");
     expect(vault.index.entries[uuid2].name).toBe("img (1).jpg");
   });
 
   it("allows same name in different paths", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const uuid1 = await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "a");
     const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "img.jpg", "b");
     expect(vault.index.entries[uuid1].name).toBe("img.jpg");
@@ -119,9 +125,8 @@ describe("addFileToVault", () => {
 // ── decryptVaultFile ───────────────────────────────────────────────────────
 
 describe("decryptVaultFile", () => {
-  it("decrypts a pending file correctly", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+  it("decrypts a file correctly", async () => {
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const data = new Uint8Array([10, 20, 30, 40]);
     const uuid = await addFileToVault(vault, data, "file.bin", "");
     const decrypted = await decryptVaultFile(vault, uuid);
@@ -133,18 +138,15 @@ describe("decryptVaultFile", () => {
 
 describe("removeFileFromVault", () => {
   it("removes an entry", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const uuid = await addFileToVault(vault, new Uint8Array([1]), "a.txt", "");
-    removeFileFromVault(vault, uuid);
+    await removeFileFromVault(vault, uuid);
     expect(vault.index.entries[uuid]).toBeUndefined();
-    expect(vault.deletedUuids.has(uuid)).toBe(true);
   });
 
-  it("throws NOT_FOUND for unknown uuid", () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
-    expect(() => removeFileFromVault(vault, "nonexistent")).toThrow(VaultError);
+  it("throws NOT_FOUND for unknown uuid", async () => {
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    await expect(removeFileFromVault(vault, "nonexistent")).rejects.toThrow(VaultError);
   });
 });
 
@@ -152,16 +154,14 @@ describe("removeFileFromVault", () => {
 
 describe("renameFileInVault", () => {
   it("renames an entry", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const uuid = await addFileToVault(vault, new Uint8Array([1]), "old.jpg", "");
     renameFileInVault(vault, uuid, "new.jpg");
     expect(vault.index.entries[uuid].name).toBe("new.jpg");
   });
 
   it("throws DUPLICATE_NAME when sibling has same name", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     await addFileToVault(vault, new Uint8Array([1]), "a.jpg", "");
     const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "b.jpg", "");
     expect(() => renameFileInVault(vault, uuid2, "a.jpg")).toThrow(VaultError);
@@ -175,8 +175,7 @@ describe("renameFileInVault", () => {
 
 describe("moveFileInVault", () => {
   it("moves an entry to a new path", async () => {
-    const handle = makeFakeHandle(new File([], "v.pnd"));
-    const vault = createEmptyVault(handle, "pw");
+    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     const uuid = await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "old");
     moveFileInVault(vault, uuid, "new/path");
     expect(vault.index.entries[uuid].path).toBe("new/path");
@@ -187,9 +186,8 @@ describe("moveFileInVault", () => {
 
 describe("saveVault + openVault round-trip", () => {
   it("saves and reopens with all entries intact", async () => {
-    const blob = await buildVaultBlob({ version: 1, entries: {} }, "pw");
-    const handle = makeFakeHandle(blobToFile(blob));
-    const vault = await openVault(handle, "pw");
+    const dirHandle = await buildVaultDir({ version: 1, entries: {} }, "pw");
+    const vault = await openVault(dirHandle, "pw");
 
     const data1 = new Uint8Array([1, 2, 3]);
     const data2 = new Uint8Array([4, 5, 6]);
@@ -198,10 +196,9 @@ describe("saveVault + openVault round-trip", () => {
     await saveVault(vault);
 
     expect(vault.modified).toBe(false);
-    expect(vault.pendingFiles.size).toBe(0);
 
     // Re-open
-    const vault2 = await openVault(handle, "pw");
+    const vault2 = await openVault(dirHandle, "pw");
     expect(Object.keys(vault2.index.entries)).toHaveLength(2);
     expect(vault2.index.entries[uuid1].name).toBe("a.jpg");
     expect(vault2.index.entries[uuid2].name).toBe("b.jpg");
@@ -211,17 +208,16 @@ describe("saveVault + openVault round-trip", () => {
     expect(decrypted1).toEqual(data1);
   });
 
-  it("excluded deleted entries on save", async () => {
-    const blob = await buildVaultBlob({ version: 1, entries: {} }, "pw");
-    const handle = makeFakeHandle(blobToFile(blob));
-    const vault = await openVault(handle, "pw");
+  it("excludes deleted entries on save", async () => {
+    const dirHandle = await buildVaultDir({ version: 1, entries: {} }, "pw");
+    const vault = await openVault(dirHandle, "pw");
 
     const uuid1 = await addFileToVault(vault, new Uint8Array([1]), "a.jpg", "");
     await addFileToVault(vault, new Uint8Array([2]), "b.jpg", "");
-    removeFileFromVault(vault, uuid1);
+    await removeFileFromVault(vault, uuid1);
     await saveVault(vault);
 
-    const vault2 = await openVault(handle, "pw");
+    const vault2 = await openVault(dirHandle, "pw");
     expect(Object.keys(vault2.index.entries)).toHaveLength(1);
     expect(vault2.index.entries[uuid1]).toBeUndefined();
   });

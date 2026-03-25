@@ -21,7 +21,7 @@ import {
 
 type Phase =
   | { phase: "idle" }
-  | { phase: "unlocking"; operation: "open" | "create"; handle: FileSystemFileHandle; error?: string }
+  | { phase: "unlocking"; operation: "open" | "create"; handle: FileSystemDirectoryHandle; error?: string }
   | { phase: "saving" }
   | { phase: "browsing"; currentPath: string };
 
@@ -53,9 +53,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
   async function handleOpenVault() {
     try {
-      const [handle] = await window.showOpenFilePicker({
-        types: [{ description: "Vault files", accept: { "application/octet-stream": [".pnd"] } }],
-      });
+      const handle = await window.showDirectoryPicker();
       setPassword("");
       setPageState({ phase: "unlocking", operation: "open", handle });
     } catch {
@@ -65,10 +63,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
   async function handleCreateVault() {
     try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: "vault.pnd",
-        types: [{ description: "Vault files", accept: { "application/octet-stream": [".pnd"] } }],
-      });
+      const handle = await window.showDirectoryPicker();
       setPassword("");
       setPageState({ phase: "unlocking", operation: "create", handle });
     } catch {
@@ -149,9 +144,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     setPageState({ phase: "idle" });
   }
 
-  function handleDelete(uuid: string) {
+  async function handleDelete(uuid: string) {
     if (!vault) return;
-    removeFileFromVault(vault, uuid);
+    await removeFileFromVault(vault, uuid);
     if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
     updateVault({ ...vault });
   }

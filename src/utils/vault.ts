@@ -1,4 +1,3 @@
-import { strFromU8, zipSync } from "fflate";
 import {
   decryptBytes,
   decryptBytesWithKey,
@@ -8,9 +7,6 @@ import {
   generateFileKey,
   importKeyFromBase64,
 } from "./crypto";
-import { type ZipEntry, parseZipDirectory, readZipEntry } from "./zipReader";
-
-export type { ZipEntry };
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -26,12 +22,9 @@ export interface VaultIndex {
 }
 
 export interface VaultState {
-  fileHandle: FileSystemFileHandle;
+  dirHandle: FileSystemDirectoryHandle;
   masterPassword: string;
   index: VaultIndex;
-  zipDirectory: Map<string, ZipEntry>; // only metadata, no file data in memory
-  pendingFiles: Map<string, Uint8Array>; // uuid → encrypted bytes for newly added files
-  deletedUuids: Set<string>;
   modified: boolean;
 }
 
@@ -58,24 +51,18 @@ export class VaultError extends Error {
 // ── Open / Create ──────────────────────────────────────────────────────────
 
 export async function openVault(
-  handle: FileSystemFileHandle,
+  dirHandle: FileSystemDirectoryHandle,
   masterPassword: string,
 ): Promise<VaultState> {
-  const file = await handle.getFile();
-
-  let zipDirectory: Map<string, ZipEntry>;
+  let indexBytes: Uint8Array;
   try {
-    zipDirectory = await parseZipDirectory(file);
+    const fh = await dirHandle.getFileHandle("index.lock");
+    const file = await fh.getFile();
+    indexBytes = new Uint8Array(await file.arrayBuffer());
   } catch {
-    throw new VaultError("INVALID_FORMAT", "Not a valid vault file");
-  }
-
-  const indexEntry = zipDirectory.get("index.lock");
-  if (!indexEntry) {
     throw new VaultError("INVALID_FORMAT", "Vault is missing index.lock");
   }
 
-  const indexBytes = await readZipEntry(file, indexEntry);
   const decrypted = await decryptBytes(new Blob([indexBytes]), masterPassword);
   if (decrypted === null) {
     throw new VaultError("WRONG_PASSWORD", "Wrong master password");
@@ -83,33 +70,22 @@ export async function openVault(
 
   let index: VaultIndex;
   try {
-    index = JSON.parse(strFromU8(decrypted));
+    index = JSON.parse(new TextDecoder().decode(decrypted));
   } catch {
     throw new VaultError("INVALID_FORMAT", "Vault index is corrupted");
   }
 
-  return {
-    fileHandle: handle,
-    masterPassword,
-    index,
-    zipDirectory,
-    pendingFiles: new Map(),
-    deletedUuids: new Set(),
-    modified: false,
-  };
+  return { dirHandle, masterPassword, index, modified: false };
 }
 
 export function createEmptyVault(
-  handle: FileSystemFileHandle,
+  dirHandle: FileSystemDirectoryHandle,
   masterPassword: string,
 ): VaultState {
   return {
-    fileHandle: handle,
+    dirHandle,
     masterPassword,
     index: { version: 1, entries: {} },
-    zipDirectory: new Map(),
-    pendingFiles: new Map(),
-    deletedUuids: new Set(),
     modified: true,
   };
 }
@@ -129,19 +105,22 @@ export async function addFileToVault(
   const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
   const keyBase64 = await exportKeyToBase64(key);
 
-  vault.pendingFiles.set(uuid, encryptedBytes);
+  const fh = await vault.dirHandle.getFileHandle(uuid, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(encryptedBytes);
+  await writable.close();
+
   vault.index.entries[uuid] = { name: resolvedName, path, keyBase64 };
   vault.modified = true;
   return uuid;
 }
 
-export function removeFileFromVault(vault: VaultState, uuid: string): void {
+export async function removeFileFromVault(vault: VaultState, uuid: string): Promise<void> {
   if (!vault.index.entries[uuid]) {
     throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
   }
   delete vault.index.entries[uuid];
-  vault.deletedUuids.add(uuid);
-  vault.pendingFiles.delete(uuid);
+  await vault.dirHandle.removeEntry(uuid);
   vault.modified = true;
 }
 
@@ -184,15 +163,9 @@ export async function decryptVaultFile(
   const entry = vault.index.entries[uuid];
   if (!entry) throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
 
-  let encryptedBytes: Uint8Array;
-  if (vault.pendingFiles.has(uuid)) {
-    encryptedBytes = vault.pendingFiles.get(uuid)!;
-  } else {
-    const zipEntry = vault.zipDirectory.get(uuid);
-    if (!zipEntry) throw new VaultError("NOT_FOUND", `ZIP entry for ${uuid} not found`);
-    const file = await vault.fileHandle.getFile();
-    encryptedBytes = await readZipEntry(file, zipEntry);
-  }
+  const fh = await vault.dirHandle.getFileHandle(uuid);
+  const file = await fh.getFile();
+  const encryptedBytes = new Uint8Array(await file.arrayBuffer());
 
   const key = await importKeyFromBase64(entry.keyBase64);
   return decryptBytesWithKey(new Blob([encryptedBytes]), key);
@@ -201,41 +174,16 @@ export async function decryptVaultFile(
 // ── Save ───────────────────────────────────────────────────────────────────
 
 export async function saveVault(vault: VaultState): Promise<void> {
-  const encoder = new TextEncoder();
-  const indexJson = encoder.encode(JSON.stringify(vault.index));
+  const indexJson = new TextEncoder().encode(JSON.stringify(vault.index));
   const encryptedIndexBlob = await encryptBytes(indexJson, vault.masterPassword);
   const encryptedIndexBytes = new Uint8Array(await encryptedIndexBlob.arrayBuffer());
 
-  const zipInput: Record<string, [Uint8Array, { level: 0 | 9 }]> = {
-    "index.lock": [encryptedIndexBytes, { level: 9 }],
-  };
-
-  const file = await vault.fileHandle.getFile();
-  for (const uuid of Object.keys(vault.index.entries)) {
-    if (vault.deletedUuids.has(uuid)) continue;
-
-    if (vault.pendingFiles.has(uuid)) {
-      zipInput[uuid] = [vault.pendingFiles.get(uuid)!, { level: 0 }];
-    } else {
-      const zipEntry = vault.zipDirectory.get(uuid);
-      if (zipEntry) {
-        const bytes = await readZipEntry(file, zipEntry);
-        zipInput[uuid] = [bytes, { level: 0 }];
-      }
-    }
-  }
-
-  const zipped = zipSync(zipInput);
-  const writable = await vault.fileHandle.createWritable();
-  await writable.write(zipped);
+  const fh = await vault.dirHandle.getFileHandle("index.lock", { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(encryptedIndexBytes);
   await writable.close();
 
-  // Refresh state after save
   vault.modified = false;
-  vault.pendingFiles.clear();
-  vault.deletedUuids.clear();
-  const freshFile = await vault.fileHandle.getFile();
-  vault.zipDirectory = await parseZipDirectory(freshFile);
 }
 
 // ── Folder tree ────────────────────────────────────────────────────────────
