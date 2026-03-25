@@ -6,6 +6,7 @@ import {
   addFileToVault,
   createEmptyVault,
   decryptVaultFile,
+  exportVaultFile,
   moveFileInVault,
   openVault,
   removeFileFromVault,
@@ -180,14 +181,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     const entry = vault.index.entries[uuid];
     if (!entry) return;
     try {
-      const bytes = await decryptVaultFile(vault, uuid);
-      if (!bytes) {
-        alert("Could not decrypt file.");
-        return;
-      }
       const saveHandle = await window.showSaveFilePicker({ suggestedName: entry.name });
       const writable = await saveHandle.createWritable();
-      await writable.write(bytes);
+      await exportVaultFile(vault, uuid, writable);
       await writable.close();
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;

@@ -10,10 +10,17 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+const PART_SIZE = 256 * 1024 * 1024; // 256 MB per encrypted part
+
+export interface VaultIndexPart {
+  uuid: string;
+  keyBase64: string;
+}
+
 export interface VaultIndexEntry {
   name: string;
   path: string; // folder path without leading/trailing slash, e.g. "photos/summer" or "" for root
-  keyBase64: string;
+  parts: VaultIndexPart[];
 }
 
 export interface VaultIndex {
@@ -100,32 +107,45 @@ export async function addFileToVault(
   onProgress?: (pct: number) => void,
 ): Promise<string> {
   const resolvedName = resolveUniqueName(vault, name, path);
-  const uuid = crypto.randomUUID();
-  const key = await generateFileKey();
-  const encryptedBlob = await encryptBytesWithKey(plainBytes, key);
-  const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
-  const keyBase64 = await exportKeyToBase64(key);
+  const entryUuid = crypto.randomUUID();
+  const totalBytes = plainBytes.length || 1; // avoid divide-by-zero for empty files
+  const fileParts: VaultIndexPart[] = [];
+  let bytesProcessed = 0;
 
-  const fh = await vault.dirHandle.getFileHandle(uuid, { create: true });
-  const writable = await fh.createWritable();
-  const CHUNK = 256 * 1024;
-  for (let offset = 0; offset < encryptedBytes.length; offset += CHUNK) {
-    await writable.write(encryptedBytes.subarray(offset, offset + CHUNK));
-    onProgress?.(Math.min(100, Math.round(((offset + CHUNK) / encryptedBytes.length) * 100)));
+  for (let offset = 0; offset < plainBytes.length || offset === 0; offset += PART_SIZE) {
+    const chunk = plainBytes.subarray(offset, offset + PART_SIZE);
+    const key = await generateFileKey();
+    const encryptedBlob = await encryptBytesWithKey(chunk, key);
+    const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+    const keyBase64 = await exportKeyToBase64(key);
+
+    const partUuid = crypto.randomUUID();
+    const fh = await vault.dirHandle.getFileHandle(partUuid, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(encryptedBytes);
+    await writable.close();
+
+    fileParts.push({ uuid: partUuid, keyBase64 });
+    bytesProcessed += chunk.length;
+    onProgress?.(Math.min(100, Math.round((bytesProcessed / totalBytes) * 100)));
+
+    if (offset === 0 && plainBytes.length === 0) break; // empty file: one part written, done
   }
-  await writable.close();
 
-  vault.index.entries[uuid] = { name: resolvedName, path, keyBase64 };
+  vault.index.entries[entryUuid] = { name: resolvedName, path, parts: fileParts };
   vault.modified = true;
-  return uuid;
+  return entryUuid;
 }
 
 export async function removeFileFromVault(vault: VaultState, uuid: string): Promise<void> {
-  if (!vault.index.entries[uuid]) {
+  const entry = vault.index.entries[uuid];
+  if (!entry) {
     throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
   }
+  for (const part of entry.parts) {
+    await vault.dirHandle.removeEntry(part.uuid);
+  }
   delete vault.index.entries[uuid];
-  await vault.dirHandle.removeEntry(uuid);
   vault.modified = true;
 }
 
@@ -159,8 +179,20 @@ export function moveFileInVault(
   vault.modified = true;
 }
 
-// ── Decrypt for preview ────────────────────────────────────────────────────
+// ── Decrypt ────────────────────────────────────────────────────────────────
 
+async function decryptPart(
+  dirHandle: FileSystemDirectoryHandle,
+  part: VaultIndexPart,
+): Promise<Uint8Array | null> {
+  const fh = await dirHandle.getFileHandle(part.uuid);
+  const file = await fh.getFile();
+  const encryptedBytes = new Uint8Array(await file.arrayBuffer());
+  const key = await importKeyFromBase64(part.keyBase64);
+  return decryptBytesWithKey(new Blob([encryptedBytes]), key);
+}
+
+/** Reassembles all parts into a single Uint8Array. Used for preview. */
 export async function decryptVaultFile(
   vault: VaultState,
   uuid: string,
@@ -168,12 +200,37 @@ export async function decryptVaultFile(
   const entry = vault.index.entries[uuid];
   if (!entry) throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
 
-  const fh = await vault.dirHandle.getFileHandle(uuid);
-  const file = await fh.getFile();
-  const encryptedBytes = new Uint8Array(await file.arrayBuffer());
+  const decryptedParts: Uint8Array[] = [];
+  for (const part of entry.parts) {
+    const decrypted = await decryptPart(vault.dirHandle, part);
+    if (decrypted === null) return null;
+    decryptedParts.push(decrypted);
+  }
 
-  const key = await importKeyFromBase64(entry.keyBase64);
-  return decryptBytesWithKey(new Blob([encryptedBytes]), key);
+  const totalLength = decryptedParts.reduce((sum, p) => sum + p.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const p of decryptedParts) {
+    result.set(p, offset);
+    offset += p.length;
+  }
+  return result;
+}
+
+/** Decrypts each part and writes it directly to writable. Used for export (memory-efficient). */
+export async function exportVaultFile(
+  vault: VaultState,
+  uuid: string,
+  writable: FileSystemWritableFileStream,
+): Promise<void> {
+  const entry = vault.index.entries[uuid];
+  if (!entry) throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
+
+  for (const part of entry.parts) {
+    const decrypted = await decryptPart(vault.dirHandle, part);
+    if (decrypted === null) throw new VaultError("INVALID_FORMAT", `Failed to decrypt part ${part.uuid}`);
+    await writable.write(decrypted);
+  }
 }
 
 // ── Save ───────────────────────────────────────────────────────────────────
