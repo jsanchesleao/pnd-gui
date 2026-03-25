@@ -119,6 +119,13 @@
   border-radius: 3px;
 }
 
+.file-item-size {
+  font-size: 0.8rem;
+  color: oklch(55% 5% 75deg);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .file-item-actions {
   display: flex;
   gap: 0.25rem;

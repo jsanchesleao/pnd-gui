@@ -23,13 +23,19 @@ function makeFakeDirHandle(): FileSystemDirectoryHandle {
 
   function makeFakeFileHandle(name: string): FileSystemFileHandle {
     return {
-      getFile: async () => new File([files.get(name) ?? new Uint8Array()], name),
+      getFile: async () =>
+        new File([files.get(name) ?? new Uint8Array()], name),
       createWritable: async () => {
         const chunks: BlobPart[] = [];
         return {
-          write: async (data: BlobPart) => { chunks.push(data); },
+          write: async (data: BlobPart) => {
+            chunks.push(data);
+          },
           close: async () => {
-            files.set(name, new Uint8Array(await new Blob(chunks).arrayBuffer()));
+            files.set(
+              name,
+              new Uint8Array(await new Blob(chunks).arrayBuffer()),
+            );
           },
         };
       },
@@ -44,23 +50,34 @@ function makeFakeDirHandle(): FileSystemDirectoryHandle {
       if (!files.has(name)) files.set(name, new Uint8Array());
       return makeFakeFileHandle(name);
     },
-    removeEntry: async (name: string) => { files.delete(name); },
+    removeEntry: async (name: string) => {
+      files.delete(name);
+    },
   } as unknown as FileSystemDirectoryHandle;
 }
 
 // Expose underlying files map for inspection (returned alongside the handle).
-function makeFakeDirHandleWithFiles(): { dirHandle: FileSystemDirectoryHandle; files: Map<string, Uint8Array> } {
+function makeFakeDirHandleWithFiles(): {
+  dirHandle: FileSystemDirectoryHandle;
+  files: Map<string, Uint8Array>;
+} {
   const files = new Map<string, Uint8Array>();
 
   function makeFakeFileHandle(name: string): FileSystemFileHandle {
     return {
-      getFile: async () => new File([files.get(name) ?? new Uint8Array()], name),
+      getFile: async () =>
+        new File([files.get(name) ?? new Uint8Array()], name),
       createWritable: async () => {
         const chunks: BlobPart[] = [];
         return {
-          write: async (data: BlobPart) => { chunks.push(data); },
+          write: async (data: BlobPart) => {
+            chunks.push(data);
+          },
           close: async () => {
-            files.set(name, new Uint8Array(await new Blob(chunks).arrayBuffer()));
+            files.set(
+              name,
+              new Uint8Array(await new Blob(chunks).arrayBuffer()),
+            );
           },
         };
       },
@@ -75,7 +92,9 @@ function makeFakeDirHandleWithFiles(): { dirHandle: FileSystemDirectoryHandle; f
       if (!files.has(name)) files.set(name, new Uint8Array());
       return makeFakeFileHandle(name);
     },
-    removeEntry: async (name: string) => { files.delete(name); },
+    removeEntry: async (name: string) => {
+      files.delete(name);
+    },
   } as unknown as FileSystemDirectoryHandle;
 
   return { dirHandle, files };
@@ -90,7 +109,9 @@ async function buildVaultDir(
   const dirHandle = makeFakeDirHandle();
   const indexJson = new TextEncoder().encode(JSON.stringify(index));
   const encryptedIndex = await encryptBytes(indexJson, masterPassword);
-  const encryptedIndexBytes = new Uint8Array(await encryptedIndex.arrayBuffer());
+  const encryptedIndexBytes = new Uint8Array(
+    await encryptedIndex.arrayBuffer(),
+  );
   const fh = await dirHandle.getFileHandle("index.lock", { create: true });
   const w = await fh.createWritable();
   await w.write(encryptedIndexBytes);
@@ -116,14 +137,21 @@ describe("openVault", () => {
   });
 
   it("throws WRONG_PASSWORD on bad password", async () => {
-    const dirHandle = await buildVaultDir({ version: 1, entries: {} }, "correct");
+    const dirHandle = await buildVaultDir(
+      { version: 1, entries: {} },
+      "correct",
+    );
     await expect(openVault(dirHandle, "wrong")).rejects.toThrow(VaultError);
-    await expect(openVault(dirHandle, "wrong")).rejects.toMatchObject({ code: "WRONG_PASSWORD" });
+    await expect(openVault(dirHandle, "wrong")).rejects.toMatchObject({
+      code: "WRONG_PASSWORD",
+    });
   });
 
   it("throws INVALID_FORMAT when index.lock is missing", async () => {
     const dirHandle = makeFakeDirHandle();
-    await expect(openVault(dirHandle, "pw")).rejects.toMatchObject({ code: "INVALID_FORMAT" });
+    await expect(openVault(dirHandle, "pw")).rejects.toMatchObject({
+      code: "INVALID_FORMAT",
+    });
   });
 });
 
@@ -146,14 +174,29 @@ describe("addFileToVault", () => {
   it("auto-suffixes duplicate names in the same path", async () => {
     const vault = createEmptyVault(makeFakeDirHandle(), "pw");
     await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "");
-    const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "img.jpg", "");
+    const uuid2 = await addFileToVault(
+      vault,
+      new Uint8Array([2]),
+      "img.jpg",
+      "",
+    );
     expect(vault.index.entries[uuid2].name).toBe("img (1).jpg");
   });
 
   it("allows same name in different paths", async () => {
     const vault = createEmptyVault(makeFakeDirHandle(), "pw");
-    const uuid1 = await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "a");
-    const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "img.jpg", "b");
+    const uuid1 = await addFileToVault(
+      vault,
+      new Uint8Array([1]),
+      "img.jpg",
+      "a",
+    );
+    const uuid2 = await addFileToVault(
+      vault,
+      new Uint8Array([2]),
+      "img.jpg",
+      "b",
+    );
     expect(vault.index.entries[uuid1].name).toBe("img.jpg");
     expect(vault.index.entries[uuid2].name).toBe("img.jpg");
   });
@@ -191,6 +234,7 @@ describe("decryptVaultFile", () => {
     vault.index.entries[combinedUuid] = {
       name: "combined.bin",
       path: "",
+      size: 6,
       parts: [
         ...vault.index.entries[uuid1].parts,
         ...vault.index.entries[uuid2].parts,
@@ -212,13 +256,20 @@ describe("exportVaultFile", () => {
 
     const written: Uint8Array[] = [];
     const fakeWritable = {
-      write: async (chunk: Uint8Array) => { written.push(chunk); },
+      write: async (chunk: Uint8Array) => {
+        written.push(chunk);
+      },
     } as unknown as FileSystemWritableFileStream;
 
     await exportVaultFile(vault, uuid, fakeWritable);
-    const result = new Uint8Array(written.reduce((sum, c) => sum + c.length, 0));
+    const result = new Uint8Array(
+      written.reduce((sum, c) => sum + c.length, 0),
+    );
     let off = 0;
-    for (const c of written) { result.set(c, off); off += c.length; }
+    for (const c of written) {
+      result.set(c, off);
+      off += c.length;
+    }
     expect(result).toEqual(data);
   });
 });
@@ -239,7 +290,9 @@ describe("removeFileFromVault", () => {
 
   it("throws NOT_FOUND for unknown uuid", async () => {
     const vault = createEmptyVault(makeFakeDirHandle(), "pw");
-    await expect(removeFileFromVault(vault, "nonexistent")).rejects.toThrow(VaultError);
+    await expect(removeFileFromVault(vault, "nonexistent")).rejects.toThrow(
+      VaultError,
+    );
   });
 });
 
@@ -248,7 +301,12 @@ describe("removeFileFromVault", () => {
 describe("renameFileInVault", () => {
   it("renames an entry", async () => {
     const vault = createEmptyVault(makeFakeDirHandle(), "pw");
-    const uuid = await addFileToVault(vault, new Uint8Array([1]), "old.jpg", "");
+    const uuid = await addFileToVault(
+      vault,
+      new Uint8Array([1]),
+      "old.jpg",
+      "",
+    );
     renameFileInVault(vault, uuid, "new.jpg");
     expect(vault.index.entries[uuid].name).toBe("new.jpg");
   });
@@ -269,7 +327,12 @@ describe("renameFileInVault", () => {
 describe("moveFileInVault", () => {
   it("moves an entry to a new path", async () => {
     const vault = createEmptyVault(makeFakeDirHandle(), "pw");
-    const uuid = await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "old");
+    const uuid = await addFileToVault(
+      vault,
+      new Uint8Array([1]),
+      "img.jpg",
+      "old",
+    );
     moveFileInVault(vault, uuid, "new/path");
     expect(vault.index.entries[uuid].path).toBe("new/path");
   });
@@ -323,17 +386,20 @@ describe("buildFolderTree", () => {
     const index: VaultIndex = {
       version: 1,
       entries: {
-        a: { name: "a.jpg", path: "photos/summer", parts: [] },
-        b: { name: "b.jpg", path: "photos/winter", parts: [] },
-        c: { name: "c.jpg", path: "", parts: [] },
-        d: { name: "d.jpg", path: "docs", parts: [] },
+        a: { name: "a.jpg", path: "photos/summer", size: 0, parts: [] },
+        b: { name: "b.jpg", path: "photos/winter", size: 0, parts: [] },
+        c: { name: "c.jpg", path: "", size: 0, parts: [] },
+        d: { name: "d.jpg", path: "docs", size: 0, parts: [] },
       },
     };
     const tree = buildFolderTree(index);
     expect(tree.fullPath).toBe("");
     expect(tree.children.map((c) => c.name).sort()).toEqual(["docs", "photos"]);
     const photos = tree.children.find((c) => c.name === "photos")!;
-    expect(photos.children.map((c) => c.name).sort()).toEqual(["summer", "winter"]);
+    expect(photos.children.map((c) => c.name).sort()).toEqual([
+      "summer",
+      "winter",
+    ]);
   });
 
   it("returns empty root for empty index", () => {
@@ -349,10 +415,10 @@ describe("getEntriesInPath", () => {
     const index: VaultIndex = {
       version: 1,
       entries: {
-        a: { name: "a.jpg", path: "photos", parts: [] },
-        b: { name: "b.jpg", path: "photos", parts: [] },
-        c: { name: "c.jpg", path: "docs", parts: [] },
-        d: { name: "d.jpg", path: "", parts: [] },
+        a: { name: "a.jpg", path: "photos", size: 0, parts: [] },
+        b: { name: "b.jpg", path: "photos", size: 0, parts: [] },
+        c: { name: "c.jpg", path: "docs", size: 0, parts: [] },
+        d: { name: "d.jpg", path: "", size: 0, parts: [] },
       },
     };
     const result = getEntriesInPath(index, "photos");
@@ -367,10 +433,10 @@ describe("getSubfolders", () => {
     const index: VaultIndex = {
       version: 1,
       entries: {
-        a: { name: "a", path: "photos/summer", parts: [] },
-        b: { name: "b", path: "photos/winter", parts: [] },
-        c: { name: "c", path: "photos/summer/beach", parts: [] },
-        d: { name: "d", path: "docs", parts: [] },
+        a: { name: "a", path: "photos/summer", size: 0, parts: [] },
+        b: { name: "b", path: "photos/winter", size: 0, parts: [] },
+        c: { name: "c", path: "photos/summer/beach", size: 0, parts: [] },
+        d: { name: "d", path: "docs", size: 0, parts: [] },
       },
     };
     const subs = getSubfolders(index, "photos");
@@ -381,9 +447,9 @@ describe("getSubfolders", () => {
     const index: VaultIndex = {
       version: 1,
       entries: {
-        a: { name: "a", path: "photos", parts: [] },
-        b: { name: "b", path: "docs", parts: [] },
-        c: { name: "c", path: "", parts: [] },
+        a: { name: "a", path: "photos", size: 0, parts: [] },
+        b: { name: "b", path: "docs", size: 0, parts: [] },
+        c: { name: "c", path: "", size: 0, parts: [] },
       },
     };
     const subs = getSubfolders(index, "");

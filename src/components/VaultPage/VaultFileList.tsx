@@ -2,6 +2,12 @@ import { useState } from "react";
 import type { VaultIndexEntry } from "../../utils/vault";
 import classes from "./VaultPage.module.css";
 
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  return (bytes / 1024).toFixed(1) + " KB";
+}
+
 interface FileEntry {
   uuid: string;
   entry: VaultIndexEntry;
@@ -145,6 +151,7 @@ const VaultFileItem: React.FC<ItemProps> = ({
           >
             {entry.name}
           </span>
+          <span className={classes["file-item-size"]}>{formatSize(entry.size)}</span>
           <div className={classes["file-item-actions"]}>
             <button onClick={() => onPreview(uuid)} title="Preview">Preview</button>
             <button onClick={() => onExport(uuid)} title="Save to disk">Save</button>

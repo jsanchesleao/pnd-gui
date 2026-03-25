@@ -20,6 +20,7 @@ export interface VaultIndexPart {
 export interface VaultIndexEntry {
   name: string;
   path: string; // folder path without leading/trailing slash, e.g. "photos/summer" or "" for root
+  size: number; // original plaintext byte count
   parts: VaultIndexPart[];
 }
 
@@ -132,7 +133,7 @@ export async function addFileToVault(
     if (offset === 0 && plainBytes.length === 0) break; // empty file: one part written, done
   }
 
-  vault.index.entries[entryUuid] = { name: resolvedName, path, parts: fileParts };
+  vault.index.entries[entryUuid] = { name: resolvedName, path, size: plainBytes.length, parts: fileParts };
   vault.modified = true;
   return entryUuid;
 }
