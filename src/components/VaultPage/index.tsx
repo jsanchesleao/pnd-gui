@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import shared from "../shared.module.css";
+import classes from "./VaultPage.module.css";
 import {
   VaultError,
   addFileToVault,
@@ -34,6 +35,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [vault, setVaultState] = useState<VaultState | null>(null);
   const [password, setPassword] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [addProgress, setAddProgress] = useState<number | null>(null);
   const previewUrlRef = useRef<string | null>(null);
 
   function updateVault(v: VaultState | null) {
@@ -102,14 +104,19 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     if (!vault || pageState.phase !== "browsing") return;
     try {
       const handles = await window.showOpenFilePicker({ multiple: true } as Parameters<typeof window.showOpenFilePicker>[0]);
-      for (const h of handles) {
-        const file = await h.getFile();
+      const total = handles.length;
+      setAddProgress(0);
+      for (let i = 0; i < handles.length; i++) {
+        const file = await handles[i].getFile();
         const bytes = new Uint8Array(await file.arrayBuffer());
-        await addFileToVault(vault, bytes, file.name, pageState.currentPath);
+        await addFileToVault(vault, bytes, file.name, pageState.currentPath, (pct) => {
+          setAddProgress(Math.round(((i + pct / 100) / total) * 100));
+        });
       }
+      setAddProgress(null);
       updateVault({ ...vault });
     } catch {
-      // user cancelled
+      setAddProgress(null);
     }
   }
 
@@ -279,6 +286,12 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onRename={handleRename}
           onMove={handleMove}
         />
+        {addProgress !== null && (
+          <div className={classes["add-progress-overlay"]}>
+            <p>Adding files…</p>
+            <progress className={shared.progress} value={addProgress} max={100} />
+          </div>
+        )}
         {preview && (
           <VaultPreviewPanel preview={preview} onClose={revokePreview} />
         )}

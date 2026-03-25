@@ -97,6 +97,7 @@ export async function addFileToVault(
   plainBytes: Uint8Array,
   name: string,
   path: string,
+  onProgress?: (pct: number) => void,
 ): Promise<string> {
   const resolvedName = resolveUniqueName(vault, name, path);
   const uuid = crypto.randomUUID();
@@ -107,7 +108,11 @@ export async function addFileToVault(
 
   const fh = await vault.dirHandle.getFileHandle(uuid, { create: true });
   const writable = await fh.createWritable();
-  await writable.write(encryptedBytes);
+  const CHUNK = 256 * 1024;
+  for (let offset = 0; offset < encryptedBytes.length; offset += CHUNK) {
+    await writable.write(encryptedBytes.subarray(offset, offset + CHUNK));
+    onProgress?.(Math.min(100, Math.round(((offset + CHUNK) / encryptedBytes.length) * 100)));
+  }
   await writable.close();
 
   vault.index.entries[uuid] = { name: resolvedName, path, keyBase64 };

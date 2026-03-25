@@ -130,6 +130,29 @@
   font-size: 0.75rem;
 }
 
+.add-progress-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: oklch(5% 0% 0deg / 80%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  z-index: 10;
+  padding: 2rem;
+  color: white;
+
+  > p {
+    font-size: 0.95rem;
+    margin: 0;
+  }
+
+  > progress {
+    width: min(320px, 80%);
+  }
+}
+
 .preview-panel {
   position: absolute;
   inset: 0;
