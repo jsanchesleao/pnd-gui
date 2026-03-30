@@ -8,6 +8,13 @@ function formatSize(bytes: number): string {
   return (bytes / 1024).toFixed(1) + " KB";
 }
 
+function getExtension(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+type SortMode = "name" | "type" | "size" | "date";
+
 interface FileEntry {
   uuid: string;
   entry: VaultIndexEntry;
@@ -22,6 +29,27 @@ interface Props {
   onMove: (uuid: string, newPath: string) => void;
 }
 
+function sortEntries(entries: FileEntry[], mode: SortMode): FileEntry[] {
+  if (mode === "date") return entries;
+  return [...entries].sort((a, b) => {
+    if (mode === "name") {
+      return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
+    }
+    if (mode === "size") {
+      return b.entry.size - a.entry.size;
+    }
+    // type
+    const extA = getExtension(a.entry.name);
+    const extB = getExtension(b.entry.name);
+    if (extA === extB) {
+      return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
+    }
+    if (extA === "") return 1;
+    if (extB === "") return -1;
+    return extA.localeCompare(extB);
+  });
+}
+
 export const VaultFileList: React.FC<Props> = ({
   entries,
   onPreview,
@@ -30,6 +58,8 @@ export const VaultFileList: React.FC<Props> = ({
   onRename,
   onMove,
 }) => {
+  const [sortBy, setSortBy] = useState<SortMode>("name");
+
   if (entries.length === 0) {
     return (
       <div className={classes["file-list"]}>
@@ -38,9 +68,24 @@ export const VaultFileList: React.FC<Props> = ({
     );
   }
 
+  const sortedEntries = sortEntries(entries, sortBy);
+
   return (
     <div className={classes["file-list"]}>
-      {entries.map(({ uuid, entry }) => (
+      <div className={classes["file-list-sort-bar"]}>
+        <label htmlFor="vault-sort">Sort by:</label>
+        <select
+          id="vault-sort"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortMode)}
+        >
+          <option value="name">Name</option>
+          <option value="type">Type</option>
+          <option value="size">Size</option>
+          <option value="date">Date added</option>
+        </select>
+      </div>
+      {sortedEntries.map(({ uuid, entry }) => (
         <VaultFileItem
           key={uuid}
           uuid={uuid}
