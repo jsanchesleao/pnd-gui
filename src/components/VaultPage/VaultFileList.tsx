@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { VaultIndexEntry } from "../../utils/vault";
+import { getFileCategory, type FileCategory } from "../../utils/mediaTypes";
 import classes from "./VaultPage.module.css";
 
 function formatSize(bytes: number): string {
@@ -14,6 +15,7 @@ function getExtension(name: string): string {
 }
 
 type SortMode = "name" | "type" | "size" | "date";
+type ViewMode = "list" | "grid";
 
 interface FileEntry {
   uuid: string;
@@ -25,8 +27,9 @@ interface Props {
   onPreview: (uuid: string) => void;
   onExport: (uuid: string) => void;
   onDelete: (uuid: string) => void;
-  onRename: (uuid: string, newName: string) => string | null; // returns error message or null
+  onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
+  onGetThumbnail: (uuid: string) => Promise<string | null>;
 }
 
 function sortEntries(entries: FileEntry[], mode: SortMode): FileEntry[] {
@@ -50,56 +53,183 @@ function sortEntries(entries: FileEntry[], mode: SortMode): FileEntry[] {
   });
 }
 
-export const VaultFileList: React.FC<Props> = ({
-  entries,
+// ── File icon (for non-image files in grid view) ─────────────────────────
+
+const CATEGORY_LABELS: Record<FileCategory, string> = {
+  image: "IMG",
+  video: "VID",
+  audio: "AUD",
+  document: "DOC",
+  archive: "ZIP",
+  code: "CODE",
+  other: "FILE",
+};
+
+const CATEGORY_COLORS: Record<FileCategory, string> = {
+  image: "oklch(68% 0.15 30deg)",
+  video: "oklch(52% 0.20 270deg)",
+  audio: "oklch(60% 0.20 330deg)",
+  document: "oklch(55% 0.15 240deg)",
+  archive: "oklch(55% 0.16 145deg)",
+  code: "oklch(60% 0.18 75deg)",
+  other: "oklch(50% 0.05 270deg)",
+};
+
+const FileIcon: React.FC<{ category: FileCategory }> = ({ category }) => (
+  <div
+    className={classes["file-icon"]}
+    style={{ backgroundColor: CATEGORY_COLORS[category] }}
+  >
+    {CATEGORY_LABELS[category]}
+  </div>
+);
+
+// ── Thumbnail (image preview or file icon) ───────────────────────────────
+
+const VaultThumbnail: React.FC<{
+  uuid: string;
+  filename: string;
+  onGetThumbnail: (uuid: string) => Promise<string | null>;
+}> = ({ uuid, filename, onGetThumbnail }) => {
+  const category = getFileCategory(filename);
+  const [imgUrl, setImgUrl] = useState<string | null | "loading">("loading");
+
+  useEffect(() => {
+    if (category !== "image") return;
+    let active = true;
+    setImgUrl("loading");
+    onGetThumbnail(uuid).then((url) => {
+      if (active) setImgUrl(url);
+    });
+    return () => { active = false; };
+  }, [uuid, category, onGetThumbnail]);
+
+  if (category !== "image") {
+    return <FileIcon category={category} />;
+  }
+  if (imgUrl === "loading") {
+    return <div className={classes["file-icon-placeholder"]} />;
+  }
+  if (imgUrl) {
+    return <img className={classes["file-grid-thumb-img"]} src={imgUrl} alt={filename} />;
+  }
+  return <FileIcon category="image" />;
+};
+
+// ── Grid item ────────────────────────────────────────────────────────────
+
+interface GridItemProps {
+  uuid: string;
+  entry: VaultIndexEntry;
+  onPreview: (uuid: string) => void;
+  onExport: (uuid: string) => void;
+  onDelete: (uuid: string) => void;
+  onRename: (uuid: string, newName: string) => string | null;
+  onMove: (uuid: string, newPath: string) => void;
+  onGetThumbnail: (uuid: string) => Promise<string | null>;
+}
+
+const VaultGridItem: React.FC<GridItemProps> = ({
+  uuid,
+  entry,
   onPreview,
   onExport,
   onDelete,
   onRename,
   onMove,
+  onGetThumbnail,
 }) => {
-  const [sortBy, setSortBy] = useState<SortMode>("name");
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(entry.name);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveValue, setMoveValue] = useState(entry.path);
 
-  if (entries.length === 0) {
-    return (
-      <div className={classes["file-list"]}>
-        <p className={classes["file-list-empty"]}>This folder is empty.</p>
-      </div>
-    );
+  function handleRenameSubmit() {
+    const name = renameValue.trim();
+    if (!name || name === entry.name) {
+      setRenaming(false);
+      return;
+    }
+    const err = onRename(uuid, name);
+    if (err) {
+      setRenameError(err);
+    } else {
+      setRenaming(false);
+      setRenameError(null);
+    }
   }
 
-  const sortedEntries = sortEntries(entries, sortBy);
+  function handleMoveSubmit() {
+    const path = moveValue.trim().replace(/^\/|\/$/g, "");
+    onMove(uuid, path);
+    setMoving(false);
+  }
 
   return (
-    <div className={classes["file-list"]}>
-      <div className={classes["file-list-sort-bar"]}>
-        <label htmlFor="vault-sort">Sort by:</label>
-        <select
-          id="vault-sort"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortMode)}
-        >
-          <option value="name">Name</option>
-          <option value="type">Type</option>
-          <option value="size">Size</option>
-          <option value="date">Date added</option>
-        </select>
+    <div className={classes["file-grid-item"]}>
+      <div
+        className={classes["file-grid-thumb"]}
+        onDoubleClick={() => onPreview(uuid)}
+      >
+        <VaultThumbnail uuid={uuid} filename={entry.name} onGetThumbnail={onGetThumbnail} />
+        <div className={classes["file-grid-actions"]}>
+          <button onClick={() => onPreview(uuid)}>Preview</button>
+          <button onClick={() => onExport(uuid)}>Save</button>
+          <button onClick={() => { setRenameValue(entry.name); setRenaming(true); }}>Rename</button>
+          <button onClick={() => { setMoveValue(entry.path); setMoving(true); }}>Move</button>
+          <button onClick={() => { if (confirm(`Delete "${entry.name}"?`)) onDelete(uuid); }}>Delete</button>
+        </div>
       </div>
-      {sortedEntries.map(({ uuid, entry }) => (
-        <VaultFileItem
-          key={uuid}
-          uuid={uuid}
-          entry={entry}
-          onPreview={onPreview}
-          onExport={onExport}
-          onDelete={onDelete}
-          onRename={onRename}
-          onMove={onMove}
-        />
-      ))}
+      <div className={classes["file-grid-bottom"]}>
+        {renaming ? (
+          <>
+            <input
+              className={classes["file-grid-rename-input"]}
+              value={renameValue}
+              onChange={(e) => { setRenameValue(e.target.value); setRenameError(null); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRenameSubmit();
+                if (e.key === "Escape") { setRenaming(false); setRenameError(null); }
+              }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "0.2rem" }}>
+              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={handleRenameSubmit} title="Confirm">✓</button>
+              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={() => { setRenaming(false); setRenameError(null); }} title="Cancel">✕</button>
+            </div>
+            {renameError && <span style={{ color: "red", fontSize: "0.65rem" }}>{renameError}</span>}
+          </>
+        ) : moving ? (
+          <>
+            <input
+              className={classes["file-grid-rename-input"]}
+              value={moveValue}
+              onChange={(e) => setMoveValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleMoveSubmit();
+                if (e.key === "Escape") setMoving(false);
+              }}
+              placeholder="Folder path"
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "0.2rem" }}>
+              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={handleMoveSubmit} title="Confirm">✓</button>
+              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={() => setMoving(false)} title="Cancel">✕</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className={classes["file-grid-name"]} title={entry.name}>{entry.name}</span>
+            <span className={classes["file-grid-size"]}>{formatSize(entry.size)}</span>
+          </>
+        )}
+      </div>
     </div>
   );
 };
+
+// ── List item (unchanged from original) ─────────────────────────────────
 
 interface ItemProps {
   uuid: string;
@@ -222,6 +352,95 @@ const VaultFileItem: React.FC<ItemProps> = ({
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+};
+
+// ── Main component ───────────────────────────────────────────────────────
+
+export const VaultFileList: React.FC<Props> = ({
+  entries,
+  onPreview,
+  onExport,
+  onDelete,
+  onRename,
+  onMove,
+  onGetThumbnail,
+}) => {
+  const [sortBy, setSortBy] = useState<SortMode>("name");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  if (entries.length === 0) {
+    return (
+      <div className={classes["file-list"]}>
+        <p className={classes["file-list-empty"]}>This folder is empty.</p>
+      </div>
+    );
+  }
+
+  const sortedEntries = sortEntries(entries, sortBy);
+
+  return (
+    <div className={classes["file-list"]}>
+      <div className={classes["file-list-sort-bar"]}>
+        <label htmlFor="vault-sort">Sort by:</label>
+        <select
+          id="vault-sort"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortMode)}
+        >
+          <option value="name">Name</option>
+          <option value="type">Type</option>
+          <option value="size">Size</option>
+          <option value="date">Date added</option>
+        </select>
+        <div className={classes["view-toggle"]}>
+          <button
+            data-active={viewMode === "list"}
+            onClick={() => setViewMode("list")}
+            title="List view"
+          >
+            List
+          </button>
+          <button
+            data-active={viewMode === "grid"}
+            onClick={() => setViewMode("grid")}
+            title="Grid view"
+          >
+            Grid
+          </button>
+        </div>
+      </div>
+      {viewMode === "list" ? (
+        sortedEntries.map(({ uuid, entry }) => (
+          <VaultFileItem
+            key={uuid}
+            uuid={uuid}
+            entry={entry}
+            onPreview={onPreview}
+            onExport={onExport}
+            onDelete={onDelete}
+            onRename={onRename}
+            onMove={onMove}
+          />
+        ))
+      ) : (
+        <div className={classes["file-grid"]}>
+          {sortedEntries.map(({ uuid, entry }) => (
+            <VaultGridItem
+              key={uuid}
+              uuid={uuid}
+              entry={entry}
+              onPreview={onPreview}
+              onExport={onExport}
+              onDelete={onDelete}
+              onRename={onRename}
+              onMove={onMove}
+              onGetThumbnail={onGetThumbnail}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

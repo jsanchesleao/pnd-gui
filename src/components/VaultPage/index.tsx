@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import shared from "../shared.module.css";
 import classes from "./VaultPage.module.css";
 import {
@@ -14,6 +14,7 @@ import {
   saveVault,
   type VaultState,
 } from "../../utils/vault";
+import { getFileCategory, getMimeType } from "../../utils/mediaTypes";
 import { VaultBrowser } from "./VaultBrowser";
 import {
   VaultPreviewPanel,
@@ -38,6 +39,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [addProgress, setAddProgress] = useState<number | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const thumbnailCacheRef = useRef<Map<string, string>>(new Map());
 
   function updateVault(v: VaultState | null) {
     setVaultState(v);
@@ -50,6 +52,13 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       previewUrlRef.current = null;
     }
     setPreview(null);
+  }
+
+  function revokeThumbnailCache() {
+    for (const url of thumbnailCacheRef.current.values()) {
+      URL.revokeObjectURL(url);
+    }
+    thumbnailCacheRef.current.clear();
   }
 
   // ── Open / Create ────────────────────────────────────────────────────────
@@ -148,6 +157,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       if (!confirm("You have unsaved changes. Close anyway?")) return;
     }
     revokePreview();
+    revokeThumbnailCache();
     updateVault(null);
     setPageState({ phase: "idle" });
   }
@@ -156,6 +166,11 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     if (!vault) return;
     await removeFileFromVault(vault, uuid);
     if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
+    const cachedUrl = thumbnailCacheRef.current.get(uuid);
+    if (cachedUrl) {
+      URL.revokeObjectURL(cachedUrl);
+      thumbnailCacheRef.current.delete(uuid);
+    }
     updateVault({ ...vault });
   }
 
@@ -190,6 +205,24 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  const handleGetThumbnail = useCallback(async (uuid: string): Promise<string | null> => {
+    if (!vault) return null;
+    const cached = thumbnailCacheRef.current.get(uuid);
+    if (cached) return cached;
+    const entry = vault.index.entries[uuid];
+    if (!entry || getFileCategory(entry.name) !== "image") return null;
+    try {
+      const bytes = await decryptVaultFile(vault, uuid);
+      if (!bytes) return null;
+      const blob = new Blob([bytes], { type: getMimeType(entry.name) });
+      const url = URL.createObjectURL(blob);
+      thumbnailCacheRef.current.set(uuid, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }, [vault]);
 
   async function handlePreview(uuid: string) {
     if (!vault) return;
@@ -281,6 +314,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onDelete={handleDelete}
           onRename={handleRename}
           onMove={handleMove}
+          onGetThumbnail={handleGetThumbnail}
         />
         {addProgress !== null && (
           <div className={classes["add-progress-overlay"]}>

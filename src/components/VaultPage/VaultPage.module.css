@@ -212,3 +212,148 @@
   color: white;
   font-size: 1rem;
 }
+
+/* ── Grid view ─────────────────────────────────────────────────────────── */
+
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.file-grid-item {
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid oklch(80% 3% 75deg);
+  background: color-mix(in oklch, var(--clr-primary) 2%, transparent);
+
+  &:hover {
+    border-color: var(--clr-primary);
+  }
+}
+
+.file-grid-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(91% 2% 75deg);
+  cursor: default;
+}
+
+@media (prefers-color-scheme: dark) {
+  .file-grid-thumb {
+    background: oklch(22% 2% 75deg);
+  }
+}
+
+.file-grid-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.06em;
+}
+
+.file-icon-placeholder {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: oklch(80% 3% 75deg);
+  animation: thumb-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thumb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.file-grid-actions {
+  position: absolute;
+  inset: 0;
+  background: oklch(5% 0% 0deg / 78%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.file-grid-item:hover .file-grid-actions {
+  opacity: 1;
+}
+
+.file-grid-actions button {
+  padding: 0.18rem 0.3rem;
+  font-size: 0.65rem;
+}
+
+.file-grid-bottom {
+  padding: 0.35rem 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-height: 2.6rem;
+}
+
+.file-grid-name {
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.file-grid-size {
+  font-size: 0.65rem;
+  color: oklch(55% 5% 75deg);
+}
+
+.file-grid-rename-input {
+  width: 100%;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.25rem;
+  border: 1px solid var(--clr-primary);
+  background: transparent;
+  color: inherit;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+/* View mode toggle buttons in sort bar */
+.view-toggle {
+  display: flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+.view-toggle button {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  border-radius: 3px;
+}
+
+.view-toggle button[data-active="true"] {
+  background: color-mix(in oklch, var(--clr-primary) 25%, transparent);
+  border-color: var(--clr-primary);
+}
