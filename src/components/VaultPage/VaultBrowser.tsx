@@ -17,6 +17,8 @@ interface Props {
   onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
+  thumbnailGenerating: Set<string>;
+  onEnqueueThumbnail: (uuid: string) => void;
 }
 
 export const VaultBrowser: React.FC<Props> = ({
@@ -33,6 +35,8 @@ export const VaultBrowser: React.FC<Props> = ({
   onRename,
   onMove,
   onGetThumbnail,
+  thumbnailGenerating,
+  onEnqueueThumbnail,
 }) => {
   const tree = buildFolderTree(vault.index);
   const entries = getEntriesInPath(vault.index, currentPath);
@@ -66,6 +70,8 @@ export const VaultBrowser: React.FC<Props> = ({
           onRename={onRename}
           onMove={onMove}
           onGetThumbnail={onGetThumbnail}
+          thumbnailGenerating={thumbnailGenerating}
+          onEnqueueThumbnail={onEnqueueThumbnail}
         />
       </div>
     </div>

@@ -30,6 +30,8 @@ interface Props {
   onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
+  thumbnailGenerating: Set<string>;
+  onEnqueueThumbnail: (uuid: string) => void;
 }
 
 function sortEntries(entries: FileEntry[], mode: SortMode): FileEntry[] {
@@ -75,45 +77,61 @@ const CATEGORY_COLORS: Record<FileCategory, string> = {
   other: "oklch(50% 0.05 270deg)",
 };
 
-const FileIcon: React.FC<{ category: FileCategory }> = ({ category }) => (
+const FileIcon: React.FC<{ category: FileCategory; generating?: boolean }> = ({ category, generating }) => (
   <div
-    className={classes["file-icon"]}
+    className={`${classes["file-icon"]}${generating ? ` ${classes["file-icon-generating"]}` : ""}`}
     style={{ backgroundColor: CATEGORY_COLORS[category] }}
   >
     {CATEGORY_LABELS[category]}
   </div>
 );
 
-// ── Thumbnail (image preview or file icon) ───────────────────────────────
+// ── Thumbnail (image/video preview or file icon) ─────────────────────────
 
 const VaultThumbnail: React.FC<{
   uuid: string;
   filename: string;
+  isGenerating: boolean;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
-}> = ({ uuid, filename, onGetThumbnail }) => {
+  onEnqueueThumbnail: (uuid: string) => void;
+}> = ({ uuid, filename, isGenerating, onGetThumbnail, onEnqueueThumbnail }) => {
   const category = getFileCategory(filename);
   const [imgUrl, setImgUrl] = useState<string | null | "loading">("loading");
 
   useEffect(() => {
-    if (category !== "image") return;
+    if (category !== "image" && category !== "video") return;
     let active = true;
     setImgUrl("loading");
     onGetThumbnail(uuid).then((url) => {
-      if (active) setImgUrl(url);
+      if (!active) return;
+      if (url) {
+        setImgUrl(url);
+      } else {
+        setImgUrl(null);
+        // Request generation only when idle — the effect will re-run when
+        // isGenerating transitions back to false after the thumbnail is saved.
+        if (category === "video" && !isGenerating) {
+          onEnqueueThumbnail(uuid);
+        }
+      }
     });
     return () => { active = false; };
-  }, [uuid, category, onGetThumbnail]);
+  }, [uuid, category, onGetThumbnail, isGenerating, onEnqueueThumbnail]);
 
-  if (category !== "image") {
+  // Non-media files always show a static badge
+  if (category !== "image" && category !== "video") {
     return <FileIcon category={category} />;
   }
+  // While fetching / decrypting, show a gray pulsing placeholder
   if (imgUrl === "loading") {
     return <div className={classes["file-icon-placeholder"]} />;
   }
+  // Thumbnail available — show it
   if (imgUrl) {
     return <img className={classes["file-grid-thumb-img"]} src={imgUrl} alt={filename} />;
   }
-  return <FileIcon category="image" />;
+  // No thumbnail yet — show the category badge (pulse while generating)
+  return <FileIcon category={category} generating={isGenerating} />;
 };
 
 // ── Grid item ────────────────────────────────────────────────────────────
@@ -127,6 +145,8 @@ interface GridItemProps {
   onRename: (uuid: string, newName: string) => string | null;
   onMove: (uuid: string, newPath: string) => void;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
+  isGenerating: boolean;
+  onEnqueueThumbnail: (uuid: string) => void;
 }
 
 const VaultGridItem: React.FC<GridItemProps> = ({
@@ -138,6 +158,8 @@ const VaultGridItem: React.FC<GridItemProps> = ({
   onRename,
   onMove,
   onGetThumbnail,
+  isGenerating,
+  onEnqueueThumbnail,
 }) => {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -172,7 +194,13 @@ const VaultGridItem: React.FC<GridItemProps> = ({
         className={classes["file-grid-thumb"]}
         onDoubleClick={() => onPreview(uuid)}
       >
-        <VaultThumbnail uuid={uuid} filename={entry.name} onGetThumbnail={onGetThumbnail} />
+        <VaultThumbnail
+          uuid={uuid}
+          filename={entry.name}
+          isGenerating={isGenerating}
+          onGetThumbnail={onGetThumbnail}
+          onEnqueueThumbnail={onEnqueueThumbnail}
+        />
         <div className={classes["file-grid-actions"]}>
           <button onClick={() => onPreview(uuid)}>Preview</button>
           <button onClick={() => onExport(uuid)}>Save</button>
@@ -367,6 +395,8 @@ export const VaultFileList: React.FC<Props> = ({
   onRename,
   onMove,
   onGetThumbnail,
+  thumbnailGenerating,
+  onEnqueueThumbnail,
 }) => {
   const [sortBy, setSortBy] = useState<SortMode>("name");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -438,6 +468,8 @@ export const VaultFileList: React.FC<Props> = ({
               onRename={onRename}
               onMove={onMove}
               onGetThumbnail={onGetThumbnail}
+              isGenerating={thumbnailGenerating.has(uuid)}
+              onEnqueueThumbnail={onEnqueueThumbnail}
             />
           ))}
         </div>

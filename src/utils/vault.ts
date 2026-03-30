@@ -22,6 +22,8 @@ export interface VaultIndexEntry {
   path: string; // folder path without leading/trailing slash, e.g. "photos/summer" or "" for root
   size: number; // original plaintext byte count
   parts: VaultIndexPart[];
+  thumbnailUuid?: string;      // UUID filename of the encrypted thumbnail blob in the vault folder
+  thumbnailKeyBase64?: string; // base64 AES-256 key for decrypting only the thumbnail
 }
 
 export interface VaultIndex {
@@ -146,6 +148,9 @@ export async function removeFileFromVault(vault: VaultState, uuid: string): Prom
   for (const part of entry.parts) {
     await vault.dirHandle.removeEntry(part.uuid);
   }
+  if (entry.thumbnailUuid) {
+    try { await vault.dirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
+  }
   delete vault.index.entries[uuid];
   vault.modified = true;
 }
@@ -216,6 +221,64 @@ export async function decryptVaultFile(
     offset += p.length;
   }
   return result;
+}
+
+/** Decrypts only the first part of a vault file. Used for thumbnail generation to avoid loading large multi-part files. */
+export async function decryptFirstVaultPart(
+  vault: VaultState,
+  uuid: string,
+): Promise<Uint8Array | null> {
+  const entry = vault.index.entries[uuid];
+  if (!entry || entry.parts.length === 0) return null;
+  return decryptPart(vault.dirHandle, entry.parts[0]);
+}
+
+/** Encrypts thumbnail bytes with a fresh key and stores them as a small file in the vault folder. */
+export async function saveVaultThumbnail(
+  vault: VaultState,
+  entryUuid: string,
+  thumbnailBytes: Uint8Array,
+): Promise<void> {
+  const entry = vault.index.entries[entryUuid];
+  if (!entry) throw new VaultError("NOT_FOUND", `Entry ${entryUuid} not found`);
+
+  // Remove the old thumbnail file if one already exists
+  if (entry.thumbnailUuid) {
+    try { await vault.dirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
+  }
+
+  const key = await generateFileKey();
+  const encryptedBlob = await encryptBytesWithKey(thumbnailBytes, key);
+  const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+  const keyBase64 = await exportKeyToBase64(key);
+  const thumbUuid = crypto.randomUUID();
+
+  const fh = await vault.dirHandle.getFileHandle(thumbUuid, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(encryptedBytes);
+  await writable.close();
+
+  entry.thumbnailUuid = thumbUuid;
+  entry.thumbnailKeyBase64 = keyBase64;
+  vault.modified = true;
+}
+
+/** Reads and decrypts a stored thumbnail. Returns null if none exists or decryption fails. */
+export async function getVaultThumbnail(
+  vault: VaultState,
+  entryUuid: string,
+): Promise<Uint8Array | null> {
+  const entry = vault.index.entries[entryUuid];
+  if (!entry?.thumbnailUuid || !entry.thumbnailKeyBase64) return null;
+  try {
+    const fh = await vault.dirHandle.getFileHandle(entry.thumbnailUuid);
+    const file = await fh.getFile();
+    const encryptedBytes = new Uint8Array(await file.arrayBuffer());
+    const key = await importKeyFromBase64(entry.thumbnailKeyBase64);
+    return decryptBytesWithKey(new Blob([encryptedBytes]), key);
+  } catch {
+    return null;
+  }
 }
 
 /** Decrypts each part and writes it directly to writable. Used for export (memory-efficient). */

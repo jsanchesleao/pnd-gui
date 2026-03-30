@@ -280,6 +280,10 @@
   animation: thumb-pulse 1.5s ease-in-out infinite;
 }
 
+.file-icon-generating {
+  animation: thumb-pulse 1.5s ease-in-out infinite;
+}
+
 @keyframes thumb-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }

@@ -5,16 +5,20 @@ import {
   VaultError,
   addFileToVault,
   createEmptyVault,
+  decryptFirstVaultPart,
   decryptVaultFile,
   exportVaultFile,
+  getVaultThumbnail,
   moveFileInVault,
   openVault,
   removeFileFromVault,
   renameFileInVault,
   saveVault,
+  saveVaultThumbnail,
   type VaultState,
 } from "../../utils/vault";
 import { getFileCategory, getMimeType } from "../../utils/mediaTypes";
+import { generateVideoThumbnail } from "../../utils/videoThumbnail";
 import { VaultBrowser } from "./VaultBrowser";
 import {
   VaultPreviewPanel,
@@ -38,13 +42,78 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [password, setPassword] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [addProgress, setAddProgress] = useState<number | null>(null);
+  const [thumbnailGenerating, setThumbnailGenerating] = useState<Set<string>>(new Set());
+
   const previewUrlRef = useRef<string | null>(null);
   const thumbnailCacheRef = useRef<Map<string, string>>(new Map());
+
+  // Always-current refs used inside stable callbacks to avoid stale closures
+  const vaultRef = useRef<VaultState | null>(null);
+  vaultRef.current = vault;
+  const onModifiedChangeRef = useRef(onModifiedChange);
+  onModifiedChangeRef.current = onModifiedChange;
+
+  // Thumbnail generation queue — processed one at a time
+  const thumbnailQueueRef = useRef<string[]>([]);
+  const thumbnailBusyRef = useRef(false);
 
   function updateVault(v: VaultState | null) {
     setVaultState(v);
     onModifiedChange?.(v?.modified ?? false);
   }
+
+  // ── Thumbnail queue ──────────────────────────────────────────────────────
+
+  const processThumbnailQueue = useCallback(async () => {
+    if (thumbnailBusyRef.current) return;
+    thumbnailBusyRef.current = true;
+
+    while (thumbnailQueueRef.current.length > 0) {
+      const currentVault = vaultRef.current;
+      if (!currentVault) break;
+
+      const uuid = thumbnailQueueRef.current.shift()!;
+      const entry = currentVault.index.entries[uuid];
+      // Skip if entry was deleted or thumbnail already exists
+      if (!entry || entry.thumbnailUuid) continue;
+
+      setThumbnailGenerating((prev) => new Set(prev).add(uuid));
+      try {
+        const partBytes = await decryptFirstVaultPart(currentVault, uuid);
+        if (!partBytes) continue;
+
+        const thumbBytes = await generateVideoThumbnail(partBytes, getMimeType(entry.name));
+        if (!thumbBytes) continue;
+
+        await saveVaultThumbnail(currentVault, uuid, thumbBytes);
+        await saveVault(currentVault);
+        onModifiedChangeRef.current?.(false);
+
+        const url = URL.createObjectURL(new Blob([thumbBytes], { type: "image/webp" }));
+        thumbnailCacheRef.current.set(uuid, url);
+        // Spread to produce a new object reference so handleGetThumbnail (which deps on vault) refreshes
+        setVaultState((v) => (v ? { ...v } : null));
+      } catch {
+        // Generation failed silently — the "VID" badge remains
+      } finally {
+        setThumbnailGenerating((prev) => {
+          const next = new Set(prev);
+          next.delete(uuid);
+          return next;
+        });
+      }
+    }
+
+    thumbnailBusyRef.current = false;
+  }, []); // stable — all external state accessed via refs
+
+  const enqueueThumbnail = useCallback((uuid: string) => {
+    if (thumbnailQueueRef.current.includes(uuid)) return;
+    thumbnailQueueRef.current.push(uuid);
+    processThumbnailQueue();
+  }, [processThumbnailQueue]);
+
+  // ── Preview helpers ──────────────────────────────────────────────────────
 
   function revokePreview() {
     if (previewUrlRef.current) {
@@ -119,9 +188,12 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       for (let i = 0; i < handles.length; i++) {
         const file = await handles[i].getFile();
         const bytes = new Uint8Array(await file.arrayBuffer());
-        await addFileToVault(vault, bytes, file.name, pageState.currentPath, (pct) => {
+        const uuid = await addFileToVault(vault, bytes, file.name, pageState.currentPath, (pct) => {
           setAddProgress(Math.round(((i + pct / 100) / total) * 100));
         });
+        if (getFileCategory(file.name) === "video") {
+          enqueueThumbnail(uuid);
+        }
       }
       setAddProgress(null);
       updateVault({ ...vault });
@@ -158,12 +230,18 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     }
     revokePreview();
     revokeThumbnailCache();
+    // Drain the queue so the background worker stops at the next iteration
+    thumbnailQueueRef.current = [];
+    thumbnailBusyRef.current = false;
+    setThumbnailGenerating(new Set());
     updateVault(null);
     setPageState({ phase: "idle" });
   }
 
   async function handleDelete(uuid: string) {
     if (!vault) return;
+    // Remove from queue before deleting so the processor doesn't try to generate a thumbnail for it
+    thumbnailQueueRef.current = thumbnailQueueRef.current.filter((id) => id !== uuid);
     await removeFileFromVault(vault, uuid);
     if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
     const cachedUrl = thumbnailCacheRef.current.get(uuid);
@@ -171,6 +249,11 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       URL.revokeObjectURL(cachedUrl);
       thumbnailCacheRef.current.delete(uuid);
     }
+    setThumbnailGenerating((prev) => {
+      const next = new Set(prev);
+      next.delete(uuid);
+      return next;
+    });
     updateVault({ ...vault });
   }
 
@@ -211,17 +294,36 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     const cached = thumbnailCacheRef.current.get(uuid);
     if (cached) return cached;
     const entry = vault.index.entries[uuid];
-    if (!entry || getFileCategory(entry.name) !== "image") return null;
-    try {
-      const bytes = await decryptVaultFile(vault, uuid);
-      if (!bytes) return null;
-      const blob = new Blob([bytes], { type: getMimeType(entry.name) });
-      const url = URL.createObjectURL(blob);
-      thumbnailCacheRef.current.set(uuid, url);
-      return url;
-    } catch {
-      return null;
+    if (!entry) return null;
+
+    const category = getFileCategory(entry.name);
+
+    if (category === "image") {
+      try {
+        const bytes = await decryptVaultFile(vault, uuid);
+        if (!bytes) return null;
+        const blob = new Blob([bytes], { type: getMimeType(entry.name) });
+        const url = URL.createObjectURL(blob);
+        thumbnailCacheRef.current.set(uuid, url);
+        return url;
+      } catch {
+        return null;
+      }
     }
+
+    if (category === "video" && entry.thumbnailUuid) {
+      try {
+        const thumbBytes = await getVaultThumbnail(vault, uuid);
+        if (!thumbBytes) return null;
+        const url = URL.createObjectURL(new Blob([thumbBytes], { type: "image/webp" }));
+        thumbnailCacheRef.current.set(uuid, url);
+        return url;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }, [vault]);
 
   async function handlePreview(uuid: string) {
@@ -315,6 +417,8 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onRename={handleRename}
           onMove={handleMove}
           onGetThumbnail={handleGetThumbnail}
+          thumbnailGenerating={thumbnailGenerating}
+          onEnqueueThumbnail={enqueueThumbnail}
         />
         {addProgress !== null && (
           <div className={classes["add-progress-overlay"]}>
