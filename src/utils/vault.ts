@@ -28,11 +28,13 @@ export interface VaultIndexEntry {
 
 export interface VaultIndex {
   version: 1;
+  blobsDir?: string; // relative subfolder name for blobs; absent = same folder as index.lock
   entries: Record<string, VaultIndexEntry>;
 }
 
 export interface VaultState {
   dirHandle: FileSystemDirectoryHandle;
+  blobsDirHandle: FileSystemDirectoryHandle;
   masterPassword: string;
   index: VaultIndex;
   modified: boolean;
@@ -85,17 +87,23 @@ export async function openVault(
     throw new VaultError("INVALID_FORMAT", "Vault index is corrupted");
   }
 
-  return { dirHandle, masterPassword, index, modified: false };
+  const blobsDirHandle = index.blobsDir
+    ? await dirHandle.getDirectoryHandle(index.blobsDir)
+    : dirHandle;
+  return { dirHandle, blobsDirHandle, masterPassword, index, modified: false };
 }
 
 export function createEmptyVault(
   dirHandle: FileSystemDirectoryHandle,
+  blobsDirHandle: FileSystemDirectoryHandle,
   masterPassword: string,
+  blobsDir?: string,
 ): VaultState {
   return {
     dirHandle,
+    blobsDirHandle,
     masterPassword,
-    index: { version: 1, entries: {} },
+    index: { version: 1, ...(blobsDir ? { blobsDir } : {}), entries: {} },
     modified: true,
   };
 }
@@ -123,7 +131,7 @@ export async function addFileToVault(
     const keyBase64 = await exportKeyToBase64(key);
 
     const partUuid = crypto.randomUUID();
-    const fh = await vault.dirHandle.getFileHandle(partUuid, { create: true });
+    const fh = await vault.blobsDirHandle.getFileHandle(partUuid, { create: true });
     const writable = await fh.createWritable();
     await writable.write(encryptedBytes);
     await writable.close();
@@ -146,10 +154,10 @@ export async function removeFileFromVault(vault: VaultState, uuid: string): Prom
     throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
   }
   for (const part of entry.parts) {
-    await vault.dirHandle.removeEntry(part.uuid);
+    await vault.blobsDirHandle.removeEntry(part.uuid);
   }
   if (entry.thumbnailUuid) {
-    try { await vault.dirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
+    try { await vault.blobsDirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
   }
   delete vault.index.entries[uuid];
   vault.modified = true;
@@ -188,10 +196,10 @@ export function moveFileInVault(
 // ── Decrypt ────────────────────────────────────────────────────────────────
 
 async function decryptPart(
-  dirHandle: FileSystemDirectoryHandle,
+  blobsDirHandle: FileSystemDirectoryHandle,
   part: VaultIndexPart,
 ): Promise<Uint8Array | null> {
-  const fh = await dirHandle.getFileHandle(part.uuid);
+  const fh = await blobsDirHandle.getFileHandle(part.uuid);
   const file = await fh.getFile();
   const encryptedBytes = new Uint8Array(await file.arrayBuffer());
   const key = await importKeyFromBase64(part.keyBase64);
@@ -208,7 +216,7 @@ export async function decryptVaultFile(
 
   const decryptedParts: Uint8Array[] = [];
   for (const part of entry.parts) {
-    const decrypted = await decryptPart(vault.dirHandle, part);
+    const decrypted = await decryptPart(vault.blobsDirHandle, part);
     if (decrypted === null) return null;
     decryptedParts.push(decrypted);
   }
@@ -230,7 +238,7 @@ export async function decryptFirstVaultPart(
 ): Promise<Uint8Array | null> {
   const entry = vault.index.entries[uuid];
   if (!entry || entry.parts.length === 0) return null;
-  return decryptPart(vault.dirHandle, entry.parts[0]);
+  return decryptPart(vault.blobsDirHandle, entry.parts[0]);
 }
 
 /** Encrypts thumbnail bytes with a fresh key and stores them as a small file in the vault folder. */
@@ -244,7 +252,7 @@ export async function saveVaultThumbnail(
 
   // Remove the old thumbnail file if one already exists
   if (entry.thumbnailUuid) {
-    try { await vault.dirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
+    try { await vault.blobsDirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
   }
 
   const key = await generateFileKey();
@@ -253,7 +261,7 @@ export async function saveVaultThumbnail(
   const keyBase64 = await exportKeyToBase64(key);
   const thumbUuid = crypto.randomUUID();
 
-  const fh = await vault.dirHandle.getFileHandle(thumbUuid, { create: true });
+  const fh = await vault.blobsDirHandle.getFileHandle(thumbUuid, { create: true });
   const writable = await fh.createWritable();
   await writable.write(encryptedBytes);
   await writable.close();
@@ -271,7 +279,7 @@ export async function getVaultThumbnail(
   const entry = vault.index.entries[entryUuid];
   if (!entry?.thumbnailUuid || !entry.thumbnailKeyBase64) return null;
   try {
-    const fh = await vault.dirHandle.getFileHandle(entry.thumbnailUuid);
+    const fh = await vault.blobsDirHandle.getFileHandle(entry.thumbnailUuid);
     const file = await fh.getFile();
     const encryptedBytes = new Uint8Array(await file.arrayBuffer());
     const key = await importKeyFromBase64(entry.thumbnailKeyBase64);
@@ -291,7 +299,7 @@ export async function exportVaultFile(
   if (!entry) throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
 
   for (const part of entry.parts) {
-    const decrypted = await decryptPart(vault.dirHandle, part);
+    const decrypted = await decryptPart(vault.blobsDirHandle, part);
     if (decrypted === null) throw new VaultError("INVALID_FORMAT", `Failed to decrypt part ${part.uuid}`);
     await writable.write(decrypted);
   }

@@ -46,49 +46,59 @@ export async function generateVideoThumbnail(
 
       video.addEventListener("error", fail, { once: true });
 
-      video.addEventListener("loadedmetadata", () => {
-        const target =
-          isFinite(video.duration) && video.duration > 0
-            ? Math.min(seekSeconds, video.duration * 0.1)
-            : 0;
-        video.currentTime = target;
-      }, { once: true });
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          const target =
+            isFinite(video.duration) && video.duration > 0
+              ? Math.min(seekSeconds, video.duration * 0.1)
+              : 0;
+          video.currentTime = target;
+        },
+        { once: true },
+      );
 
-      video.addEventListener("seeked", () => {
-        if (settled) return;
-        settled = true;
-        try {
-          const aspectRatio =
-            video.videoHeight > 0
-              ? video.videoWidth / video.videoHeight
-              : 16 / 9;
-          const canvas = document.createElement("canvas");
-          canvas.width = outputWidth;
-          canvas.height = Math.round(outputWidth / aspectRatio);
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
+      video.addEventListener(
+        "seeked",
+        () => {
+          if (settled) return;
+          settled = true;
+          try {
+            const aspectRatio =
+              video.videoHeight > 0
+                ? video.videoWidth / video.videoHeight
+                : 16 / 9;
+            const canvas = document.createElement("canvas");
+            canvas.width = outputWidth;
+            canvas.height = Math.round(outputWidth / aspectRatio);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              cleanup();
+              resolve(null);
+              return;
+            }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(
+              (canvasBlob) => {
+                cleanup();
+                if (!canvasBlob) {
+                  resolve(null);
+                  return;
+                }
+                canvasBlob
+                  .arrayBuffer()
+                  .then((ab) => resolve(new Uint8Array(ab)));
+              },
+              "image/webp",
+              quality,
+            );
+          } catch {
             cleanup();
             resolve(null);
-            return;
           }
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(
-            (canvasBlob) => {
-              cleanup();
-              if (!canvasBlob) {
-                resolve(null);
-                return;
-              }
-              canvasBlob.arrayBuffer().then((ab) => resolve(new Uint8Array(ab)));
-            },
-            "image/webp",
-            quality,
-          );
-        } catch {
-          cleanup();
-          resolve(null);
-        }
-      }, { once: true });
+        },
+        { once: true },
+      );
 
       video.src = url;
     });

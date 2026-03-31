@@ -28,7 +28,12 @@ import {
 
 type Phase =
   | { phase: "idle" }
-  | { phase: "unlocking"; operation: "open" | "create"; handle: FileSystemDirectoryHandle; error?: string }
+  | {
+      phase: "unlocking";
+      operation: "open" | "create";
+      handle: FileSystemDirectoryHandle;
+      error?: string;
+    }
   | { phase: "saving" }
   | { phase: "browsing"; currentPath: string };
 
@@ -40,9 +45,12 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [pageState, setPageState] = useState<Phase>({ phase: "idle" });
   const [vault, setVaultState] = useState<VaultState | null>(null);
   const [password, setPassword] = useState("");
+  const [subfolderName, setSubfolderName] = useState("");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [addProgress, setAddProgress] = useState<number | null>(null);
-  const [thumbnailGenerating, setThumbnailGenerating] = useState<Set<string>>(new Set());
+  const [thumbnailGenerating, setThumbnailGenerating] = useState<Set<string>>(
+    new Set(),
+  );
 
   const previewUrlRef = useRef<string | null>(null);
   const thumbnailCacheRef = useRef<Map<string, string>>(new Map());
@@ -79,17 +87,24 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
       setThumbnailGenerating((prev) => new Set(prev).add(uuid));
       try {
-        const partBytes = await decryptFirstVaultPart(currentVault, uuid);
+        const partBytes = await decryptVaultFile(currentVault, uuid);
         if (!partBytes) continue;
 
-        const thumbBytes = await generateVideoThumbnail(partBytes, getMimeType(entry.name));
-        if (!thumbBytes) continue;
+        const thumbBytes = await generateVideoThumbnail(
+          partBytes,
+          getMimeType(entry.name),
+        );
+        if (!thumbBytes) {
+          continue;
+        }
 
         await saveVaultThumbnail(currentVault, uuid, thumbBytes);
         await saveVault(currentVault);
         onModifiedChangeRef.current?.(false);
 
-        const url = URL.createObjectURL(new Blob([thumbBytes], { type: "image/webp" }));
+        const url = URL.createObjectURL(
+          new Blob([thumbBytes], { type: "image/webp" }),
+        );
         thumbnailCacheRef.current.set(uuid, url);
         // Spread to produce a new object reference so handleGetThumbnail (which deps on vault) refreshes
         setVaultState((v) => (v ? { ...v } : null));
@@ -107,11 +122,14 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     thumbnailBusyRef.current = false;
   }, []); // stable — all external state accessed via refs
 
-  const enqueueThumbnail = useCallback((uuid: string) => {
-    if (thumbnailQueueRef.current.includes(uuid)) return;
-    thumbnailQueueRef.current.push(uuid);
-    processThumbnailQueue();
-  }, [processThumbnailQueue]);
+  const enqueueThumbnail = useCallback(
+    (uuid: string) => {
+      if (thumbnailQueueRef.current.includes(uuid)) return;
+      thumbnailQueueRef.current.push(uuid);
+      processThumbnailQueue();
+    },
+    [processThumbnailQueue],
+  );
 
   // ── Preview helpers ──────────────────────────────────────────────────────
 
@@ -146,6 +164,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     try {
       const handle = await window.showDirectoryPicker();
       setPassword("");
+      setSubfolderName("");
       setPageState({ phase: "unlocking", operation: "create", handle });
     } catch {
       // user cancelled picker
@@ -162,7 +181,16 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         updateVault(v);
         setPageState({ phase: "browsing", currentPath: "" });
       } else {
-        const v = createEmptyVault(handle, password);
+        const trimmed = subfolderName.trim();
+        const blobsDirHandle = trimmed
+          ? await handle.getDirectoryHandle(trimmed, { create: true })
+          : handle;
+        const v = createEmptyVault(
+          handle,
+          blobsDirHandle,
+          password,
+          trimmed || undefined,
+        );
         setPageState({ phase: "saving" });
         await saveVault(v);
         updateVault(v);
@@ -170,9 +198,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       }
     } catch (e) {
       if (e instanceof VaultError) {
-        setPageState({ ...pageState, error: e.code === "WRONG_PASSWORD" ? "Wrong password." : e.message });
+        setPageState({
+          ...pageState,
+          error: e.code === "WRONG_PASSWORD" ? "Wrong password." : e.message,
+        });
       } else {
-        setPageState({ ...pageState, error: e instanceof Error ? e.message : String(e) });
+        setPageState({
+          ...pageState,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
   }
@@ -182,15 +216,23 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   async function handleAddFiles() {
     if (!vault || pageState.phase !== "browsing") return;
     try {
-      const handles = await window.showOpenFilePicker({ multiple: true } as Parameters<typeof window.showOpenFilePicker>[0]);
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+      } as Parameters<typeof window.showOpenFilePicker>[0]);
       const total = handles.length;
       setAddProgress(0);
       for (let i = 0; i < handles.length; i++) {
         const file = await handles[i].getFile();
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const uuid = await addFileToVault(vault, bytes, file.name, pageState.currentPath, (pct) => {
-          setAddProgress(Math.round(((i + pct / 100) / total) * 100));
-        });
+        const uuid = await addFileToVault(
+          vault,
+          bytes,
+          file.name,
+          pageState.currentPath,
+          (pct) => {
+            setAddProgress(Math.round(((i + pct / 100) / total) * 100));
+          },
+        );
         if (getFileCategory(file.name) === "video") {
           enqueueThumbnail(uuid);
         }
@@ -217,10 +259,16 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     try {
       await saveVault(vault);
       updateVault({ ...vault });
-      setPageState({ phase: "browsing", currentPath: (pageState as { currentPath?: string }).currentPath ?? "" });
+      setPageState({
+        phase: "browsing",
+        currentPath: (pageState as { currentPath?: string }).currentPath ?? "",
+      });
     } catch (e) {
       alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
-      setPageState({ phase: "browsing", currentPath: (pageState as { currentPath?: string }).currentPath ?? "" });
+      setPageState({
+        phase: "browsing",
+        currentPath: (pageState as { currentPath?: string }).currentPath ?? "",
+      });
     }
   }
 
@@ -241,7 +289,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   async function handleDelete(uuid: string) {
     if (!vault) return;
     // Remove from queue before deleting so the processor doesn't try to generate a thumbnail for it
-    thumbnailQueueRef.current = thumbnailQueueRef.current.filter((id) => id !== uuid);
+    thumbnailQueueRef.current = thumbnailQueueRef.current.filter(
+      (id) => id !== uuid,
+    );
     await removeFileFromVault(vault, uuid);
     if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
     const cachedUrl = thumbnailCacheRef.current.get(uuid);
@@ -279,7 +329,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     const entry = vault.index.entries[uuid];
     if (!entry) return;
     try {
-      const saveHandle = await window.showSaveFilePicker({ suggestedName: entry.name });
+      const saveHandle = await window.showSaveFilePicker({
+        suggestedName: entry.name,
+      });
       const writable = await saveHandle.createWritable();
       await exportVaultFile(vault, uuid, writable);
       await writable.close();
@@ -289,42 +341,47 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     }
   }
 
-  const handleGetThumbnail = useCallback(async (uuid: string): Promise<string | null> => {
-    if (!vault) return null;
-    const cached = thumbnailCacheRef.current.get(uuid);
-    if (cached) return cached;
-    const entry = vault.index.entries[uuid];
-    if (!entry) return null;
+  const handleGetThumbnail = useCallback(
+    async (uuid: string): Promise<string | null> => {
+      if (!vault) return null;
+      const cached = thumbnailCacheRef.current.get(uuid);
+      if (cached) return cached;
+      const entry = vault.index.entries[uuid];
+      if (!entry) return null;
 
-    const category = getFileCategory(entry.name);
+      const category = getFileCategory(entry.name);
 
-    if (category === "image") {
-      try {
-        const bytes = await decryptVaultFile(vault, uuid);
-        if (!bytes) return null;
-        const blob = new Blob([bytes], { type: getMimeType(entry.name) });
-        const url = URL.createObjectURL(blob);
-        thumbnailCacheRef.current.set(uuid, url);
-        return url;
-      } catch {
-        return null;
+      if (category === "image") {
+        try {
+          const bytes = await decryptVaultFile(vault, uuid);
+          if (!bytes) return null;
+          const blob = new Blob([bytes], { type: getMimeType(entry.name) });
+          const url = URL.createObjectURL(blob);
+          thumbnailCacheRef.current.set(uuid, url);
+          return url;
+        } catch {
+          return null;
+        }
       }
-    }
 
-    if (category === "video" && entry.thumbnailUuid) {
-      try {
-        const thumbBytes = await getVaultThumbnail(vault, uuid);
-        if (!thumbBytes) return null;
-        const url = URL.createObjectURL(new Blob([thumbBytes], { type: "image/webp" }));
-        thumbnailCacheRef.current.set(uuid, url);
-        return url;
-      } catch {
-        return null;
+      if (category === "video" && entry.thumbnailUuid) {
+        try {
+          const thumbBytes = await getVaultThumbnail(vault, uuid);
+          if (!thumbBytes) return null;
+          const url = URL.createObjectURL(
+            new Blob([thumbBytes], { type: "image/webp" }),
+          );
+          thumbnailCacheRef.current.set(uuid, url);
+          return url;
+        } catch {
+          return null;
+        }
       }
-    }
 
-    return null;
-  }, [vault]);
+      return null;
+    },
+    [vault],
+  );
 
   async function handlePreview(uuid: string) {
     if (!vault) return;
@@ -365,7 +422,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     return (
       <div className={shared.container}>
         <p>
-          {pageState.operation === "open" ? "Unlock vault" : "Set master password for new vault"}
+          {pageState.operation === "open"
+            ? "Unlock vault"
+            : "Set master password for new vault"}
         </p>
         <div className={shared.controls}>
           <input
@@ -376,6 +435,14 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
             onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
             autoFocus
           />
+          {pageState.operation === "create" && (
+            <input
+              type="text"
+              placeholder="Blob subfolder (optional, e.g. blobs)"
+              value={subfolderName}
+              onChange={(e) => setSubfolderName(e.target.value)}
+            />
+          )}
           {pageState.error && (
             <p className={shared.text} data-text-type="failure">
               {pageState.error}
@@ -385,7 +452,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
             <button onClick={handleUnlock} disabled={!password}>
               {pageState.operation === "open" ? "Unlock" : "Create"}
             </button>
-            <button onClick={() => setPageState({ phase: "idle" })}>Cancel</button>
+            <button onClick={() => setPageState({ phase: "idle" })}>
+              Cancel
+            </button>
           </div>
         </div>
       </div>
@@ -406,7 +475,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         <VaultBrowser
           vault={vault}
           currentPath={pageState.currentPath}
-          onNavigate={(path) => setPageState({ ...pageState, currentPath: path })}
+          onNavigate={(path) =>
+            setPageState({ ...pageState, currentPath: path })
+          }
           onAddFiles={handleAddFiles}
           onNewFolder={handleNewFolder}
           onSave={handleSave}
@@ -423,7 +494,11 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         {addProgress !== null && (
           <div className={classes["add-progress-overlay"]}>
             <p>Adding files…</p>
-            <progress className={shared.progress} value={addProgress} max={100} />
+            <progress
+              className={shared.progress}
+              value={addProgress}
+              max={100}
+            />
           </div>
         )}
         {preview && (

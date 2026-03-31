@@ -125,6 +125,11 @@ async function buildVaultDir(
   return dirHandle;
 }
 
+function makeEmptyVault(pw = "pw") {
+  const dh = makeFakeDirHandle();
+  return createEmptyVault(dh, dh, pw);
+}
+
 // ── openVault ──────────────────────────────────────────────────────────────
 
 describe("openVault", () => {
@@ -159,7 +164,7 @@ describe("openVault", () => {
 
 describe("addFileToVault", () => {
   it("adds an entry with one part for a small file", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const data = new Uint8Array([1, 2, 3]);
     const uuid = await addFileToVault(vault, data, "test.jpg", "photos");
     const entry = vault.index.entries[uuid];
@@ -172,7 +177,7 @@ describe("addFileToVault", () => {
   });
 
   it("auto-suffixes duplicate names in the same path", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     await addFileToVault(vault, new Uint8Array([1]), "img.jpg", "");
     const uuid2 = await addFileToVault(
       vault,
@@ -184,7 +189,7 @@ describe("addFileToVault", () => {
   });
 
   it("allows same name in different paths", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const uuid1 = await addFileToVault(
       vault,
       new Uint8Array([1]),
@@ -206,7 +211,7 @@ describe("addFileToVault", () => {
 
 describe("decryptVaultFile", () => {
   it("decrypts a single-part file correctly", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const data = new Uint8Array([10, 20, 30, 40]);
     const uuid = await addFileToVault(vault, data, "file.bin", "");
     const decrypted = await decryptVaultFile(vault, uuid);
@@ -221,7 +226,7 @@ describe("decryptVaultFile", () => {
     // treating them conceptually. Instead, rely on the round-trip test below.
     // This test verifies decryptVaultFile with a pre-built two-part entry.
     const { dirHandle, files: _files } = makeFakeDirHandleWithFiles();
-    const vault = createEmptyVault(dirHandle, "pw");
+    const vault = createEmptyVault(dirHandle, dirHandle, "pw");
 
     // Add two small files and manually combine their part arrays into one entry
     const data1 = new Uint8Array([1, 2, 3]);
@@ -250,7 +255,7 @@ describe("decryptVaultFile", () => {
 
 describe("exportVaultFile", () => {
   it("writes decrypted bytes to writable", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const data = new Uint8Array([11, 22, 33]);
     const uuid = await addFileToVault(vault, data, "file.bin", "");
 
@@ -279,7 +284,7 @@ describe("exportVaultFile", () => {
 describe("removeFileFromVault", () => {
   it("removes the entry and its part files from the directory", async () => {
     const { dirHandle, files } = makeFakeDirHandleWithFiles();
-    const vault = createEmptyVault(dirHandle, "pw");
+    const vault = createEmptyVault(dirHandle, dirHandle, "pw");
     const uuid = await addFileToVault(vault, new Uint8Array([1]), "a.txt", "");
     const partUuid = vault.index.entries[uuid].parts[0].uuid;
     expect(files.has(partUuid)).toBe(true);
@@ -289,7 +294,7 @@ describe("removeFileFromVault", () => {
   });
 
   it("throws NOT_FOUND for unknown uuid", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     await expect(removeFileFromVault(vault, "nonexistent")).rejects.toThrow(
       VaultError,
     );
@@ -300,7 +305,7 @@ describe("removeFileFromVault", () => {
 
 describe("renameFileInVault", () => {
   it("renames an entry", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const uuid = await addFileToVault(
       vault,
       new Uint8Array([1]),
@@ -312,7 +317,7 @@ describe("renameFileInVault", () => {
   });
 
   it("throws DUPLICATE_NAME when sibling has same name", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     await addFileToVault(vault, new Uint8Array([1]), "a.jpg", "");
     const uuid2 = await addFileToVault(vault, new Uint8Array([2]), "b.jpg", "");
     expect(() => renameFileInVault(vault, uuid2, "a.jpg")).toThrow(VaultError);
@@ -326,7 +331,7 @@ describe("renameFileInVault", () => {
 
 describe("moveFileInVault", () => {
   it("moves an entry to a new path", async () => {
-    const vault = createEmptyVault(makeFakeDirHandle(), "pw");
+    const vault = makeEmptyVault();
     const uuid = await addFileToVault(
       vault,
       new Uint8Array([1]),
