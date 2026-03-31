@@ -5,6 +5,8 @@ import shared from "../shared.module.css";
 import type { Props, State } from "./VideoPlayerPage.types";
 import { VideoPlayerForm } from "./VideoPlayerForm";
 import { VideoPlayerDisplay } from "./VideoPlayerDisplay";
+import { DecryptingProgress } from "../DecryptingProgress";
+import { DecryptError } from "../DecryptError";
 
 export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(
@@ -123,16 +125,7 @@ export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   if (state.type === "loading") {
-    return (
-      <div className={shared.container}>
-        <p>Decrypting {state.file.name}…</p>
-        <progress
-          className={shared.progress}
-          value={state.progress}
-          max={100}
-        />
-      </div>
-    );
+    return <DecryptingProgress filename={state.file.name} progress={state.progress} />;
   }
 
   if (state.type === "playing") {
@@ -151,17 +144,11 @@ export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "error") {
     return (
-      <div className={shared.container}>
-        <p className={shared.text} data-text-type="failure">
-          Error: {state.message}
-        </p>
-        <button
-          onClick={() => setState({ type: "password", file: state.file })}
-        >
-          Try again
-        </button>
-        <button onClick={onReset ?? handleChooseFile}>Change File</button>
-      </div>
+      <DecryptError
+        message={state.message}
+        onTryAgain={() => setState({ type: "password", file: state.file })}
+        onChangeFile={onReset ?? handleChooseFile}
+      />
     );
   }
 

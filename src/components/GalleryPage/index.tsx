@@ -6,6 +6,8 @@ import type { GalleryImage, State } from "./GalleryPage.types";
 import { getMimeType, isImageFile } from "./GalleryPage.helpers";
 import { GalleryPasswordForm } from "./GalleryPasswordForm";
 import { GalleryCarousel } from "./GalleryCarousel";
+import { DecryptingProgress } from "../DecryptingProgress";
+import { DecryptError } from "../DecryptError";
 
 interface Props {
   initialFile?: File;
@@ -134,12 +136,7 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   if (state.type === "loading") {
-    return (
-      <div className={shared.container}>
-        <p>Decrypting {state.file.name}…</p>
-        <progress className={shared.progress} value={state.progress} max={100} />
-      </div>
-    );
+    return <DecryptingProgress filename={state.file.name} progress={state.progress} />;
   }
 
   if (state.type === "viewing") {
@@ -158,15 +155,11 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "error") {
     return (
-      <div className={shared.container}>
-        <p className={shared.text} data-text-type="failure">
-          Error: {state.message}
-        </p>
-        <button onClick={() => setState({ type: "password", file: state.file })}>
-          Try again
-        </button>
-        <button onClick={onReset ?? handleChooseFile}>Change File</button>
-      </div>
+      <DecryptError
+        message={state.message}
+        onTryAgain={() => setState({ type: "password", file: state.file })}
+        onChangeFile={onReset ?? handleChooseFile}
+      />
     );
   }
 
