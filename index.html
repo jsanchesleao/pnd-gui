@@ -1,14 +1,67 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
-  </head>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>pnd-gui</title>
+        <style>
+            :root {
+                --clr-bg: oklch(95% 5% 75deg);
+                --clr-primary: oklch(60% 50% 30deg);
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --clr-bg: oklch(20% 5% 75deg);
+                    --clr-primary: oklch(70% 50% 30deg);
+                }
+            }
+            html,
+            body,
+            #root {
+                margin: 0;
+                height: 100%;
+            }
+            body {
+                background-color: var(--clr-bg);
+            }
+            #splash {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                /* Delay appearance so fast loads never show the spinner */
+                animation: splash-appear 0.2s ease 0.3s both;
+            }
+            @keyframes splash-appear {
+                from {
+                    opacity: 0;
+                }
+                to {
+                    opacity: 1;
+                }
+            }
+            #spinner {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                border: 3px solid
+                    color-mix(in oklch, var(--clr-primary) 25%, transparent);
+                border-top-color: var(--clr-primary);
+                animation: spin 0.75s linear infinite;
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    <body>
+        <div id="root">
+            <div id="splash"><div id="spinner"></div></div>
+        </div>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
 </html>
