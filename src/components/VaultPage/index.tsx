@@ -87,16 +87,22 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
       setThumbnailGenerating((prev) => new Set(prev).add(uuid));
       try {
-        const partBytes = await decryptVaultFile(currentVault, uuid);
-        if (!partBytes) continue;
+        const mime = getMimeType(entry.name);
+        let thumbBytes: Uint8Array | null = null;
 
-        const thumbBytes = await generateVideoThumbnail(
-          partBytes,
-          getMimeType(entry.name),
-        );
-        if (!thumbBytes) {
-          continue;
+        const firstPartBytes = await decryptFirstVaultPart(currentVault, uuid);
+        if (firstPartBytes) {
+          thumbBytes = await generateVideoThumbnail(firstPartBytes, mime);
         }
+
+        if (!thumbBytes) {
+          const fullBytes = await decryptVaultFile(currentVault, uuid);
+          if (fullBytes) {
+            thumbBytes = await generateVideoThumbnail(fullBytes, mime);
+          }
+        }
+
+        if (!thumbBytes) continue;
 
         await saveVaultThumbnail(currentVault, uuid, thumbBytes);
         await saveVault(currentVault);
