@@ -86,7 +86,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           thumbBytes = await generateVideoThumbnail(firstPartBytes, mime);
         }
 
-        if (!thumbBytes) {
+        if (!thumbBytes && entry.parts.length > 1) {
           const fullBytes = await decryptVaultFile(currentVault, uuid);
           if (fullBytes) {
             thumbBytes = await generateVideoThumbnail(fullBytes, mime);
