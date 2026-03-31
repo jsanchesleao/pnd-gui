@@ -3,6 +3,7 @@ import {
   createDecryptedStream,
   createEncryptedStream,
   decryptBytesWithKey,
+  decryptFileToBytes,
   encryptBytesWithKey,
   exportKeyToBase64,
   generateFileKey,
@@ -148,5 +149,38 @@ describe("createDecryptedStream error handling", () => {
     const decrypted = createDecryptedStream(encrypted, "wrong");
 
     await expect(collectStream(decrypted)).rejects.toThrow();
+  });
+});
+
+describe("decryptFileToBytes", () => {
+  it("decrypts a file and returns the original bytes", async () => {
+    const data = new Uint8Array([1, 2, 3, 4, 5]);
+    const encrypted = await collectStream(
+      createEncryptedStream(makeStream(data), "secret"),
+    );
+    const file = new File([encrypted], "test.enc");
+    const result = await decryptFileToBytes(file, "secret");
+    expect(result).toEqual(data);
+  });
+
+  it("calls onProgress with values between 0 and 100", async () => {
+    const data = new Uint8Array(500).fill(7);
+    const encrypted = await collectStream(
+      createEncryptedStream(makeStream(data), "pw", 100),
+    );
+    const file = new File([encrypted], "test.enc");
+    const calls: number[] = [];
+    await decryptFileToBytes(file, "pw", (p) => calls.push(p));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((p) => p >= 0 && p <= 100)).toBe(true);
+  });
+
+  it("throws on wrong password", async () => {
+    const data = new Uint8Array([1, 2, 3]);
+    const encrypted = await collectStream(
+      createEncryptedStream(makeStream(data), "correct"),
+    );
+    const file = new File([encrypted], "test.enc");
+    await expect(decryptFileToBytes(file, "wrong")).rejects.toThrow();
   });
 });

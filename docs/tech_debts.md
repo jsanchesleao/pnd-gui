@@ -19,17 +19,6 @@ List of known, yet to be fixed, tech debts:
 
 ---
 
-### Decryption boilerplate duplicated across three page components
-
-**Files:** `ImageViewerPage/index.tsx`, `VideoPlayerPage/index.tsx`, `GalleryPage/index.tsx`
-
-All three `handleDecrypt`/`handlePlay` functions are near character-for-character copies (~55 lines each): build a `progressStream` TransformStream, pipe through `createDecryptedStream`, collect chunks with a `reader.read()` loop, concatenate into a `combined Uint8Array`, catch errors. Every variable name is identical. Only what happens with `combined` afterwards differs.
-
-**Suggestion:** Extract `decryptFileToBytes(file, password, onProgress)` → `Promise<Uint8Array>` into `src/utils/`, reducing each call site to ~5 lines.
-
----
-
-
 ### Write-file pattern repeated three times in `vault.ts`
 
 **Files:** `utils/vault.ts`

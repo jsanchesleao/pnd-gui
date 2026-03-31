@@ -106,6 +106,46 @@ export function createDecryptedStream(
     .pipeThrough(createFrameJoinStream());
 }
 
+export async function decryptFileToBytes(
+  file: File,
+  password: string,
+  onProgress?: (percent: number) => void,
+): Promise<Uint8Array> {
+  const totalBytes = file.size;
+  let processedBytes = 0;
+
+  const progressStream = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      processedBytes += chunk.byteLength;
+      onProgress?.(Math.round((processedBytes / totalBytes) * 100));
+      controller.enqueue(chunk);
+    },
+  });
+
+  const decryptedStream = createDecryptedStream(
+    file.stream().pipeThrough(progressStream),
+    password,
+  );
+
+  const chunks: Uint8Array[] = [];
+  const reader = decryptedStream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+
+  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return combined;
+}
+
 function createSalt(): ArrayBuffer {
   return crypto.getRandomValues(new Uint8Array(16));
 }

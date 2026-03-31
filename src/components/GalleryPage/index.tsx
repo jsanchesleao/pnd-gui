@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { unzipSync } from "fflate";
-import { createDecryptedStream } from "../../utils/crypto";
+import { decryptFileToBytes } from "../../utils/crypto";
 import shared from "../shared.module.css";
 import type { GalleryImage, State } from "./GalleryPage.types";
 import { getMimeType, isImageFile } from "./GalleryPage.helpers";
@@ -48,41 +48,11 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
     setState({ type: "loading", file, progress: 0 });
 
     try {
-      const totalBytes = file.size;
-      let processedBytes = 0;
-
-      const progressStream = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          processedBytes += chunk.byteLength;
-          setState((prev) =>
-            prev.type === "loading"
-              ? { ...prev, progress: Math.round((processedBytes / totalBytes) * 100) }
-              : prev,
-          );
-          controller.enqueue(chunk);
-        },
+      const combined = await decryptFileToBytes(file, password, (percent) => {
+        setState((prev) =>
+          prev.type === "loading" ? { ...prev, progress: percent } : prev,
+        );
       });
-
-      const decryptedStream = createDecryptedStream(
-        file.stream().pipeThrough(progressStream),
-        password,
-      );
-
-      const chunks: Uint8Array[] = [];
-      const reader = decryptedStream.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-
-      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-      const combined = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
 
       const entries = unzipSync(combined);
       const imageEntries = Object.entries(entries)
