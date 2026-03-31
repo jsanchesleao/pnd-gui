@@ -4,7 +4,8 @@ import {
   createEncryptedStream,
 } from "../../utils/crypto";
 import shared from "../shared.module.css";
-import { BLOCK_SIZE_OPTIONS, DEFAULT_BLOCK_SIZE } from "./GenericPage.constants";
+import { DEFAULT_BLOCK_SIZE } from "./GenericPage.constants";
+import { GenericPageForm } from "./GenericPageForm";
 
 export type GenericPageProps = {};
 
@@ -94,38 +95,16 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
 
   if (status === "idle") {
     return (
-      <div className={shared.container}>
-        <p>
-          Enter password to <strong>{isEncrypt ? "encrypt" : "decrypt"}</strong>{" "}
-          {file.name}
-        </p>
-        <div className={shared.controls}>
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {isEncrypt && (
-            <select
-              value={chunkSize}
-              onChange={(e) => setChunkSize(Number(e.target.value))}
-            >
-              {BLOCK_SIZE_OPTIONS.map(({ label, value }) => (
-                <option key={value} value={value}>
-                  Block size: {label}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className={shared["button-group"]}>
-            <button onClick={handleProcess}>
-              {isEncrypt ? "Encrypt" : "Decrypt"}
-            </button>
-            <button onClick={handleChooseFile}>Change File</button>
-          </div>
-        </div>
-      </div>
+      <GenericPageForm
+        file={file}
+        isEncrypt={isEncrypt}
+        password={password}
+        chunkSize={chunkSize}
+        onPasswordChange={setPassword}
+        onChunkSizeChange={setChunkSize}
+        onProcess={handleProcess}
+        onChooseFile={handleChooseFile}
+      />
     );
   }
 

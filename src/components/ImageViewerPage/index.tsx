@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createDecryptedStream } from "../../utils/crypto";
 import { getMimeType } from "../../utils/mediaTypes";
-import classes from "./ImageViewerPage.module.css";
 import shared from "../shared.module.css";
 import type { Props, State } from "./ImageViewerPage.types";
+import { ImageViewerForm } from "./ImageViewerForm";
+import { ImageViewerDisplay } from "./ImageViewerDisplay";
 
 export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(
@@ -109,20 +110,13 @@ export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "password") {
     return (
-      <div className={shared.container}>
-        <p>{state.file.name}</p>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleDecrypt()}
-        />
-        <div className={shared["button-group"]}>
-          <button onClick={handleDecrypt}>View</button>
-          <button onClick={onReset ?? handleChooseFile}>Change File</button>
-        </div>
-      </div>
+      <ImageViewerForm
+        file={state.file}
+        password={password}
+        onPasswordChange={setPassword}
+        onDecrypt={handleDecrypt}
+        onChangeFile={onReset ?? handleChooseFile}
+      />
     );
   }
 
@@ -141,25 +135,16 @@ export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "viewing") {
     return (
-      <div className={shared.container}>
-        <img
-          className={classes.image}
-          src={state.objectUrl}
-          alt={state.file.name}
-        />
-        <div className={shared["button-group"]}>
-          <button
-            onClick={() => {
-              revokeCurrentUrl();
-              if (onReset) onReset();
-              else setState({ type: "idle" });
-            }}
-          >
-            Close Image
-          </button>
-          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
-        </div>
-      </div>
+      <ImageViewerDisplay
+        objectUrl={state.objectUrl}
+        filename={state.file.name}
+        onClose={() => {
+          revokeCurrentUrl();
+          if (onReset) onReset();
+          else setState({ type: "idle" });
+        }}
+        onChooseAnother={onReset ?? handleChooseFile}
+      />
     );
   }
 

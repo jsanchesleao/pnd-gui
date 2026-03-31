@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { unzipSync } from "fflate";
 import { createDecryptedStream } from "../../utils/crypto";
-import classes from "./GalleryPage.module.css";
 import shared from "../shared.module.css";
 import type { GalleryImage, State } from "./GalleryPage.types";
 import { getMimeType, isImageFile } from "./GalleryPage.helpers";
+import { GalleryPasswordForm } from "./GalleryPasswordForm";
+import { GalleryCarousel } from "./GalleryCarousel";
 
 interface Props {
   initialFile?: File;
@@ -23,19 +24,6 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
       revokeAllUrls();
     };
   }, []);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (state.type !== "viewing") return;
-      if (e.key === "ArrowLeft" && state.index > 0) {
-        setState({ ...state, index: state.index - 1 });
-      } else if (e.key === "ArrowRight" && state.index < state.images.length - 1) {
-        setState({ ...state, index: state.index + 1 });
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state]);
 
   function revokeAllUrls() {
     for (const url of objectUrlsRef.current) {
@@ -113,7 +101,7 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
         return { name, objectUrl };
       });
 
-      setState({ type: "viewing", file, images, index: 0 });
+      setState({ type: "viewing", file, images });
     } catch (e: unknown) {
       setState({
         type: "error",
@@ -135,20 +123,13 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "password") {
     return (
-      <div className={shared.container}>
-        <p>{state.file.name}</p>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleDecrypt()}
-        />
-        <div className={shared["button-group"]}>
-          <button onClick={handleDecrypt}>View</button>
-          <button onClick={onReset ?? handleChooseFile}>Change File</button>
-        </div>
-      </div>
+      <GalleryPasswordForm
+        file={state.file}
+        password={password}
+        onPasswordChange={setPassword}
+        onDecrypt={handleDecrypt}
+        onChangeFile={onReset ?? handleChooseFile}
+      />
     );
   }
 
@@ -162,50 +143,16 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   if (state.type === "viewing") {
-    const { images, index } = state;
-    const current = images[index];
     return (
-      <div className={shared.container}>
-        <div className={classes.carousel}>
-          <div className={classes.imageWrapper}>
-            <img
-              className={classes.image}
-              src={current.objectUrl}
-              alt={current.name}
-            />
-          </div>
-          <p className={classes.filename}>{current.name}</p>
-          <div className={classes.carouselControls}>
-            <button
-              onClick={() => setState({ ...state, index: index - 1 })}
-              disabled={index === 0}
-            >
-              &#8249;
-            </button>
-            <span className={classes.counter}>
-              {index + 1} / {images.length}
-            </span>
-            <button
-              onClick={() => setState({ ...state, index: index + 1 })}
-              disabled={index === images.length - 1}
-            >
-              &#8250;
-            </button>
-          </div>
-        </div>
-        <div className={shared["button-group"]}>
-          <button
-            onClick={() => {
-              revokeAllUrls();
-              if (onReset) onReset();
-              else setState({ type: "idle" });
-            }}
-          >
-            Close
-          </button>
-          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
-        </div>
-      </div>
+      <GalleryCarousel
+        images={state.images}
+        onClose={() => {
+          revokeAllUrls();
+          if (onReset) onReset();
+          else setState({ type: "idle" });
+        }}
+        onChooseAnother={onReset ?? handleChooseFile}
+      />
     );
   }
 

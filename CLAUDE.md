@@ -54,7 +54,7 @@ Each component lives in its own folder. Complex components are further split int
 
 ### Patterns to follow
 
-- **Folder conventions:** Each component folder may contain sibling files named `ComponentName.types.ts` (discriminated unions, interfaces), `ComponentName.constants.ts` (lookup tables, option arrays), `ComponentName.helpers.ts` (pure utility functions), and individual sub-component files (`SubComponent.tsx`). The `index.tsx` imports from these siblings and contains only the component body. CSS Modules are co-located as `ComponentName.module.css`.
+- **Folder conventions:** Each component folder may contain sibling files named `ComponentName.types.ts` (discriminated unions, interfaces), `ComponentName.constants.ts` (lookup tables, option arrays), `ComponentName.helpers.ts` (pure utility functions), and individual sub-component files (`SubComponent.tsx`). The `index.tsx` imports from these siblings and contains only the component body. CSS Modules are co-located as `ComponentName.module.css`. Page-level state branches that render non-trivial UI are also extracted to named sub-components (e.g. `GalleryCarousel.tsx`, `VaultUnlockForm.tsx`) rather than returned inline from `if (state.type === "...")` blocks; only truly minimal branches (a single button, a one-line message) stay inline.
 - **Error handling:** Vault operations throw `VaultError` with typed codes (`WRONG_PASSWORD`, `INVALID_FORMAT`, `DUPLICATE_NAME`, `NOT_FOUND`). Crypto decryption returns `null` on failure.
 - **Styling:** CSS Modules (`.module.css`) per component; shared button/input/progress styles in `components/shared.module.css`.
 - **State machines:** Use union types for phase/state (e.g., `"idle" | "processing" | "done" | "error"`), not boolean flags.

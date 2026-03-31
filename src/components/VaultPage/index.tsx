@@ -26,6 +26,7 @@ import {
   type PreviewState,
 } from "./VaultPreviewPanel";
 import type { Phase } from "./types";
+import { VaultUnlockForm } from "./VaultUnlockForm";
 
 interface Props {
   onModifiedChange?: (modified: boolean) => void;
@@ -416,44 +417,16 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
   if (pageState.phase === "unlocking") {
     return (
-      <div className={shared.container}>
-        <p>
-          {pageState.operation === "open"
-            ? "Unlock vault"
-            : "Set master password for new vault"}
-        </p>
-        <div className={shared.controls}>
-          <input
-            type="password"
-            placeholder="Master password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
-            autoFocus
-          />
-          {pageState.operation === "create" && (
-            <input
-              type="text"
-              placeholder="Blob subfolder (optional, e.g. blobs)"
-              value={subfolderName}
-              onChange={(e) => setSubfolderName(e.target.value)}
-            />
-          )}
-          {pageState.error && (
-            <p className={shared.text} data-text-type="failure">
-              {pageState.error}
-            </p>
-          )}
-          <div className={shared["button-group"]}>
-            <button onClick={handleUnlock} disabled={!password}>
-              {pageState.operation === "open" ? "Unlock" : "Create"}
-            </button>
-            <button onClick={() => setPageState({ phase: "idle" })}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
+      <VaultUnlockForm
+        operation={pageState.operation}
+        password={password}
+        subfolderName={subfolderName}
+        error={pageState.error}
+        onPasswordChange={setPassword}
+        onSubfolderNameChange={setSubfolderName}
+        onSubmit={handleUnlock}
+        onCancel={() => setPageState({ phase: "idle" })}
+      />
     );
   }
 

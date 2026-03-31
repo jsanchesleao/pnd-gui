@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createDecryptedStream } from "../../utils/crypto";
 import { getMimeType } from "../../utils/mediaTypes";
-import classes from "./VideoPlayerPage.module.css";
 import shared from "../shared.module.css";
 import type { Props, State } from "./VideoPlayerPage.types";
+import { VideoPlayerForm } from "./VideoPlayerForm";
+import { VideoPlayerDisplay } from "./VideoPlayerDisplay";
 
 export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(
@@ -111,20 +112,13 @@ export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "password") {
     return (
-      <div className={shared.container}>
-        <p>{state.file.name}</p>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handlePlay()}
-        />
-        <div className={shared["button-group"]}>
-          <button onClick={handlePlay}>Play</button>
-          <button onClick={onReset ?? handleChooseFile}>Change File</button>
-        </div>
-      </div>
+      <VideoPlayerForm
+        file={state.file}
+        password={password}
+        onPasswordChange={setPassword}
+        onPlay={handlePlay}
+        onChangeFile={onReset ?? handleChooseFile}
+      />
     );
   }
 
@@ -143,28 +137,15 @@ export const VideoPlayerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "playing") {
     return (
-      <div className={shared.container}>
-        <div className={classes["video-wrapper"]}>
-          <video
-            className={classes.video}
-            src={state.objectUrl}
-            controls
-            autoPlay
-          />
-        </div>
-        <div className={shared["button-group"]}>
-          <button
-            onClick={() => {
-              revokeCurrentUrl();
-              if (onReset) onReset();
-              else setState({ type: "idle" });
-            }}
-          >
-            Close Video
-          </button>
-          <button onClick={onReset ?? handleChooseFile}>Choose another file</button>
-        </div>
-      </div>
+      <VideoPlayerDisplay
+        objectUrl={state.objectUrl}
+        onClose={() => {
+          revokeCurrentUrl();
+          if (onReset) onReset();
+          else setState({ type: "idle" });
+        }}
+        onChooseAnother={onReset ?? handleChooseFile}
+      />
     );
   }
 
