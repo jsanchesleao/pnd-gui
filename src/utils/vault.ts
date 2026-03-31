@@ -131,10 +131,7 @@ export async function addFileToVault(
     const keyBase64 = await exportKeyToBase64(key);
 
     const partUuid = crypto.randomUUID();
-    const fh = await vault.blobsDirHandle.getFileHandle(partUuid, { create: true });
-    const writable = await fh.createWritable();
-    await writable.write(encryptedBytes);
-    await writable.close();
+    await writeToHandle(vault.blobsDirHandle, partUuid, encryptedBytes);
 
     fileParts.push({ uuid: partUuid, keyBase64 });
     bytesProcessed += chunk.length;
@@ -261,10 +258,7 @@ export async function saveVaultThumbnail(
   const keyBase64 = await exportKeyToBase64(key);
   const thumbUuid = crypto.randomUUID();
 
-  const fh = await vault.blobsDirHandle.getFileHandle(thumbUuid, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(encryptedBytes);
-  await writable.close();
+  await writeToHandle(vault.blobsDirHandle, thumbUuid, encryptedBytes);
 
   entry.thumbnailUuid = thumbUuid;
   entry.thumbnailKeyBase64 = keyBase64;
@@ -312,10 +306,7 @@ export async function saveVault(vault: VaultState): Promise<void> {
   const encryptedIndexBlob = await encryptBytes(indexJson, vault.masterPassword);
   const encryptedIndexBytes = new Uint8Array(await encryptedIndexBlob.arrayBuffer());
 
-  const fh = await vault.dirHandle.getFileHandle("index.lock", { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(encryptedIndexBytes);
-  await writable.close();
+  await writeToHandle(vault.dirHandle, "index.lock", encryptedIndexBytes);
 
   vault.modified = false;
 }
@@ -374,6 +365,18 @@ export function getSubfolders(index: VaultIndex, path: string): string[] {
 }
 
 // ── Internal helpers ───────────────────────────────────────────────────────
+
+async function writeToHandle(
+  dirHandle: FileSystemDirectoryHandle,
+  name: string,
+  data: Uint8Array,
+): Promise<void> {
+  const fh = await dirHandle.getFileHandle(name, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(data);
+  await writable.close();
+}
+
 
 function getSiblingsInPath(
   index: VaultIndex,

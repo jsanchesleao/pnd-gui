@@ -19,16 +19,6 @@ List of known, yet to be fixed, tech debts:
 
 ---
 
-### Write-file pattern repeated three times in `vault.ts`
-
-**Files:** `utils/vault.ts`
-
-The same four-line sequence — `getFileHandle → createWritable → write → close` — appears verbatim in `addFileToVault`, `saveVaultThumbnail`, and `saveVault`.
-
-**Suggestion:** Extract a private `writeFileHandle(dirHandle, name, data)` helper inside `vault.ts`.
-
----
-
 ### Unused salt bytes in `encryptBytesWithKey` / `decryptBytesWithKey`
 
 **Files:** `utils/crypto.ts`
