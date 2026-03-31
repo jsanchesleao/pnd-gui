@@ -30,16 +30,6 @@ All three `handleDecrypt`/`handlePlay` functions are near character-for-characte
 ---
 
 
-### Loading and error UI duplicated across three page components
-
-**Files:** `ImageViewerPage/index.tsx`, `VideoPlayerPage/index.tsx`, `GalleryPage/index.tsx`
-
-The `loading` render block (`<p>Decrypting…</p>` + `<progress>`) and the `error` render block (`Error: {message}` + Try again + Change File buttons) are structurally identical markup in all three components.
-
-**Suggestion:** Extract shared sub-components — e.g. `DecryptingProgress` and `DecryptError` — into a common location.
-
----
-
 ### Write-file pattern repeated three times in `vault.ts`
 
 **Files:** `utils/vault.ts`

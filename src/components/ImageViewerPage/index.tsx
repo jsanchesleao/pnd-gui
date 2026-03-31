@@ -5,6 +5,8 @@ import shared from "../shared.module.css";
 import type { Props, State } from "./ImageViewerPage.types";
 import { ImageViewerForm } from "./ImageViewerForm";
 import { ImageViewerDisplay } from "./ImageViewerDisplay";
+import { DecryptingProgress } from "../DecryptingProgress";
+import { DecryptError } from "../DecryptError";
 
 export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(
@@ -121,16 +123,7 @@ export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   if (state.type === "loading") {
-    return (
-      <div className={shared.container}>
-        <p>Decrypting {state.file.name}…</p>
-        <progress
-          className={shared.progress}
-          value={state.progress}
-          max={100}
-        />
-      </div>
-    );
+    return <DecryptingProgress filename={state.file.name} progress={state.progress} />;
   }
 
   if (state.type === "viewing") {
@@ -150,17 +143,11 @@ export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
 
   if (state.type === "error") {
     return (
-      <div className={shared.container}>
-        <p className={shared.text} data-text-type="failure">
-          Error: {state.message}
-        </p>
-        <button
-          onClick={() => setState({ type: "password", file: state.file })}
-        >
-          Try again
-        </button>
-        <button onClick={handleChooseFile}>Change File</button>
-      </div>
+      <DecryptError
+        message={state.message}
+        onTryAgain={() => setState({ type: "password", file: state.file })}
+        onChangeFile={handleChooseFile}
+      />
     );
   }
 
