@@ -29,25 +29,6 @@ All three `handleDecrypt`/`handlePlay` functions are near character-for-characte
 
 ---
 
-### `getMimeType` duplicated in `GalleryPage.helpers.ts`
-
-**Files:** `GalleryPage/GalleryPage.helpers.ts`, `utils/mediaTypes.ts`
-
-`GalleryPage.helpers.ts` defines its own `getMimeType` (a switch over image extensions) instead of importing the one already in `utils/mediaTypes.ts`. The two functions share identical case tables for images; `ImageViewerPage` and `VideoPlayerPage` already use the canonical version.
-
-**Suggestion:** Delete the local copy and import from `utils/mediaTypes`.
-
----
-
-### `IMAGE_EXTENSIONS` duplicated in `GalleryPage.constants.ts`
-
-**Files:** `GalleryPage/GalleryPage.constants.ts`, `utils/mediaTypes.ts`
-
-`GalleryPage.constants.ts` exports `IMAGE_EXTENSIONS` with the same eight members as the set inside `mediaTypes.ts`. It exists only to back `isImageFile` in `GalleryPage.helpers.ts`, which could instead use `getFileCategory(name) === "image"` from the utility.
-
-**Suggestion:** Delete `GalleryPage.constants.ts` and rewrite `isImageFile` using `getFileCategory`.
-
----
 
 ### Loading and error UI duplicated across three page components
 
