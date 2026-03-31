@@ -57,13 +57,3 @@ The same four-line sequence — `getFileHandle → createWritable → write → 
 `encryptBytesWithKey` prepends a 16-byte salt to every output blob, but `decryptBytesWithKey` skips it with a hardcoded offset and never reads it — the key is pre-derived so there is nothing to re-derive. The salt is dead bytes in every vault block file and the byte layout is inconsistently different from the stream-based encrypt/decrypt functions in the same file.
 
 **Suggestion:** Remove the salt prefix from `encryptBytesWithKey` and adjust `decryptBytesWithKey` to read `iv` at offset 0. **Breaking format change** — requires a migration path or format version guard before fixing.
-
----
-
-### Potentially redundant double-decrypt in thumbnail queue
-
-**Files:** `VaultPage/index.tsx` (`processThumbnailQueue`)
-
-The queue processor calls `decryptFirstVaultPart` and passes the result to `generateVideoThumbnail`. If that returns `null` it falls back to `decryptVaultFile` (full file) and tries again. For single-part files these two calls return identical bytes, making the fallback a full redundant decrypt. The `videoThumbnail.ts` utility is documented as designed to work on just the first part.
-
-**Suggestion:** Skip the fallback when `entry.parts.length === 1`, or remove it entirely if the first-part strategy is always sufficient.
