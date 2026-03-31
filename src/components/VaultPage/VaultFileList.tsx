@@ -15,6 +15,7 @@ function getExtension(name: string): string {
 }
 
 type SortMode = "name" | "type" | "size" | "date";
+type SortOrder = "asc" | "desc";
 type ViewMode = "list" | "grid";
 
 interface FileEntry {
@@ -34,25 +35,31 @@ interface Props {
   onEnqueueThumbnail: (uuid: string) => void;
 }
 
-function sortEntries(entries: FileEntry[], mode: SortMode): FileEntry[] {
-  if (mode === "date") return entries;
-  return [...entries].sort((a, b) => {
-    if (mode === "name") {
-      return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
-    }
-    if (mode === "size") {
-      return b.entry.size - a.entry.size;
-    }
-    // type
-    const extA = getExtension(a.entry.name);
-    const extB = getExtension(b.entry.name);
-    if (extA === extB) {
-      return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
-    }
-    if (extA === "") return 1;
-    if (extB === "") return -1;
-    return extA.localeCompare(extB);
-  });
+function sortEntries(entries: FileEntry[], mode: SortMode, order: SortOrder): FileEntry[] {
+  let result: FileEntry[];
+  if (mode === "date") {
+    result = order === "desc" ? [...entries].reverse() : entries;
+  } else {
+    result = [...entries].sort((a, b) => {
+      if (mode === "name") {
+        return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
+      }
+      if (mode === "size") {
+        return a.entry.size - b.entry.size;
+      }
+      // type
+      const extA = getExtension(a.entry.name);
+      const extB = getExtension(b.entry.name);
+      if (extA === extB) {
+        return a.entry.name.localeCompare(b.entry.name, undefined, { sensitivity: "base" });
+      }
+      if (extA === "") return 1;
+      if (extB === "") return -1;
+      return extA.localeCompare(extB);
+    });
+    if (order === "desc") result.reverse();
+  }
+  return result;
 }
 
 // ── File icon (for non-image files in grid view) ─────────────────────────
@@ -399,6 +406,7 @@ export const VaultFileList: React.FC<Props> = ({
   onEnqueueThumbnail,
 }) => {
   const [sortBy, setSortBy] = useState<SortMode>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   if (entries.length === 0) {
@@ -409,7 +417,7 @@ export const VaultFileList: React.FC<Props> = ({
     );
   }
 
-  const sortedEntries = sortEntries(entries, sortBy);
+  const sortedEntries = sortEntries(entries, sortBy, sortOrder);
 
   return (
     <div className={classes["file-list"]}>
@@ -425,6 +433,13 @@ export const VaultFileList: React.FC<Props> = ({
           <option value="size">Size</option>
           <option value="date">Date added</option>
         </select>
+        <button
+          className={classes["sort-order-btn"]}
+          onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
+          title={sortOrder === "asc" ? "Ascending" : "Descending"}
+        >
+          {sortOrder === "asc" ? "↑" : "↓"}
+        </button>
         <div className={classes["view-toggle"]}>
           <button
             data-active={viewMode === "list"}
