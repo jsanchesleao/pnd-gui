@@ -5,6 +5,7 @@ interface Props {
   password: string;
   subfolderName: string;
   error?: string;
+  vaultName?: string;
   onPasswordChange: (value: string) => void;
   onSubfolderNameChange: (value: string) => void;
   onSubmit: () => void;
@@ -16,6 +17,7 @@ export const VaultUnlockForm: React.FC<Props> = ({
   password,
   subfolderName,
   error,
+  vaultName,
   onPasswordChange,
   onSubfolderNameChange,
   onSubmit,
@@ -24,7 +26,9 @@ export const VaultUnlockForm: React.FC<Props> = ({
   <div className={shared.container}>
     <p>
       {operation === "open"
-        ? "Unlock vault"
+        ? vaultName
+          ? `Unlock ${vaultName}`
+          : "Unlock vault"
         : "Set master password for new vault"}
     </p>
     <div className={shared.controls}>

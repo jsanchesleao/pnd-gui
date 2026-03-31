@@ -5,6 +5,7 @@ export type Phase =
       operation: "open" | "create";
       handle: FileSystemDirectoryHandle;
       error?: string;
+      vaultName?: string;
     }
   | { phase: "saving" }
   | { phase: "browsing"; currentPath: string };

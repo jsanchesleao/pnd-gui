@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import shared from "../shared.module.css";
 import classes from "./VaultPage.module.css";
 import {
@@ -27,6 +27,14 @@ import {
 } from "./VaultPreviewPanel";
 import type { Phase } from "./types";
 import { VaultUnlockForm } from "./VaultUnlockForm";
+import {
+  addRecentVault,
+  getRecentVaults,
+  removeRecentVault,
+  toggleFavorite,
+  type RecentVaultEntry,
+} from "../../utils/recentVaults";
+import { VaultRecentList } from "./VaultRecentList";
 
 interface Props {
   onModifiedChange?: (modified: boolean) => void;
@@ -42,6 +50,11 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [thumbnailGenerating, setThumbnailGenerating] = useState<Set<string>>(
     new Set(),
   );
+  const [recentVaults, setRecentVaults] = useState<RecentVaultEntry[]>([]);
+
+  useEffect(() => {
+    getRecentVaults().then(setRecentVaults).catch(() => {});
+  }, []);
 
   const previewUrlRef = useRef<string | null>(null);
   const thumbnailCacheRef = useRef<Map<string, string>>(new Map());
@@ -145,6 +158,29 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     thumbnailCacheRef.current.clear();
   }
 
+  // ── Recent vaults ────────────────────────────────────────────────────────
+
+  async function handleOpenRecent(entry: RecentVaultEntry) {
+    try {
+      const perm = await entry.handle.requestPermission({ mode: "readwrite" });
+      if (perm !== "granted") { await handleOpenVault(); return; }
+    } catch {
+      await handleOpenVault(); return;
+    }
+    setPassword("");
+    setPageState({ phase: "unlocking", operation: "open", handle: entry.handle, vaultName: entry.name });
+  }
+
+  async function handleRemoveRecent(id: number) {
+    await removeRecentVault(id);
+    setRecentVaults((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  async function handleToggleFavorite(id: number) {
+    await toggleFavorite(id);
+    setRecentVaults(await getRecentVaults());
+  }
+
   // ── Open / Create ────────────────────────────────────────────────────────
 
   async function handleOpenVault() {
@@ -176,6 +212,10 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       if (operation === "open") {
         const v = await openVault(handle, password);
         updateVault(v);
+        try {
+          await addRecentVault(handle.name, handle);
+          setRecentVaults(await getRecentVaults());
+        } catch { /* non-fatal */ }
         setPageState({ phase: "browsing", currentPath: "" });
       } else {
         const trimmed = subfolderName.trim();
@@ -191,6 +231,10 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         setPageState({ phase: "saving" });
         await saveVault(v);
         updateVault(v);
+        try {
+          await addRecentVault(handle.name, handle);
+          setRecentVaults(await getRecentVaults());
+        } catch { /* non-fatal */ }
         setPageState({ phase: "browsing", currentPath: "" });
       }
     } catch (e) {
@@ -410,6 +454,12 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         <div className={shared.controls}>
           <button onClick={handleOpenVault}>Open Vault</button>
           <button onClick={handleCreateVault}>New Vault</button>
+          <VaultRecentList
+            entries={recentVaults}
+            onOpen={handleOpenRecent}
+            onRemove={handleRemoveRecent}
+            onToggleFavorite={handleToggleFavorite}
+          />
         </div>
       </div>
     );
@@ -422,6 +472,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         password={password}
         subfolderName={subfolderName}
         error={pageState.error}
+        vaultName={pageState.vaultName}
         onPasswordChange={setPassword}
         onSubfolderNameChange={setSubfolderName}
         onSubmit={handleUnlock}
