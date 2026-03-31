@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { FolderNode } from "../../utils/vault";
-import classes from "./VaultPage.module.css";
+import type { FolderNode } from "../../../utils/vault";
+import classes from "./VaultFolderTree.module.css";
 
 interface Props {
   tree: FolderNode;

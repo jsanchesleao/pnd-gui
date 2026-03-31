@@ -31,14 +31,20 @@ npx vitest run src/utils/crypto.test.ts
 
 ### Component structure (`src/components/`)
 
+Each component lives in its own folder. Complex components are further split into sibling files (see **Folder conventions** below).
+
 - **`GenericPage/`** — Encrypt/Decrypt tab. Streams a file through `createEncryptedStream`/`createDecryptedStream` with progress tracking.
-- **`PreviewPage/`** — Detects file type (strips `.lock` suffix), decrypts to memory, then delegates to `ImageViewerPage`, `VideoPlayerPage`, or `GalleryPage` (ZIP decompressed with fflate).
+- **`PreviewPage/`** — Detects file type (strips `.lock` suffix) then delegates to `ImageViewerPage`, `VideoPlayerPage`, or `GalleryPage` (ZIP decompressed with fflate).
+- **`ImageViewerPage/`** — Decrypts a single image file to memory and displays it.
+- **`VideoPlayerPage/`** — Same pattern as ImageViewerPage but renders a `<video>` element.
+- **`GalleryPage/`** — Decrypts a ZIP archive and shows a keyboard-navigable image carousel.
 - **`VaultPage/`** — Most complex area:
-  - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages thumbnail queue processed serially.
-  - `VaultBrowser.tsx` — Two-panel layout (folder tree left, file list right).
-  - `VaultFolderTree.tsx` — Virtual folder hierarchy derived from `entry.path` fields in the index.
-  - `VaultFileList.tsx` — File list/grid with sort (name/type/size/date × asc/desc) and view mode (list/grid). Thumbnail loading is lazy via `onEnqueueThumbnail`.
-  - `VaultPreviewPanel.tsx` — In-vault preview overlay (decrypts on demand, same viewers as PreviewPage).
+  - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue.
+  - `types.ts` — `Phase` discriminated union for the page state machine.
+  - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right).
+  - `VaultFolderTree/` — Virtual folder hierarchy derived from `entry.path` fields in the vault index.
+  - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`.
+  - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand.
 
 ### Data flow summary
 
@@ -48,6 +54,7 @@ npx vitest run src/utils/crypto.test.ts
 
 ### Patterns to follow
 
+- **Folder conventions:** Each component folder may contain sibling files named `ComponentName.types.ts` (discriminated unions, interfaces), `ComponentName.constants.ts` (lookup tables, option arrays), `ComponentName.helpers.ts` (pure utility functions), and individual sub-component files (`SubComponent.tsx`). The `index.tsx` imports from these siblings and contains only the component body. CSS Modules are co-located as `ComponentName.module.css`.
 - **Error handling:** Vault operations throw `VaultError` with typed codes (`WRONG_PASSWORD`, `INVALID_FORMAT`, `DUPLICATE_NAME`, `NOT_FOUND`). Crypto decryption returns `null` on failure.
 - **Styling:** CSS Modules (`.module.css`) per component; shared button/input/progress styles in `components/shared.module.css`.
 - **State machines:** Use union types for phase/state (e.g., `"idle" | "processing" | "done" | "error"`), not boolean flags.

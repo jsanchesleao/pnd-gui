@@ -25,17 +25,7 @@ import {
   buildPreviewState,
   type PreviewState,
 } from "./VaultPreviewPanel";
-
-type Phase =
-  | { phase: "idle" }
-  | {
-      phase: "unlocking";
-      operation: "open" | "create";
-      handle: FileSystemDirectoryHandle;
-      error?: string;
-    }
-  | { phase: "saving" }
-  | { phase: "browsing"; currentPath: string };
+import type { Phase } from "./types";
 
 interface Props {
   onModifiedChange?: (modified: boolean) => void;

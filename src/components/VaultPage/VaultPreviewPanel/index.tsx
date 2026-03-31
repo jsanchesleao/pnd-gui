@@ -1,11 +1,8 @@
-import { getMimeType, getMediaType } from "../../utils/mediaTypes";
-import classes from "./VaultPage.module.css";
+import type { PreviewState } from "./VaultPreviewPanel.types";
+import classes from "./VaultPreviewPanel.module.css";
 
-export type PreviewState =
-  | { type: "loading"; uuid: string }
-  | { type: "image"; uuid: string; objectUrl: string; name: string }
-  | { type: "video"; uuid: string; objectUrl: string; name: string }
-  | { type: "unsupported"; uuid: string; name: string };
+export type { PreviewState } from "./VaultPreviewPanel.types";
+export { buildPreviewState } from "./VaultPreviewPanel.helpers";
 
 interface Props {
   preview: PreviewState;
@@ -49,19 +46,3 @@ export const VaultPreviewPanel: React.FC<Props> = ({ preview, onClose }) => {
     </div>
   );
 };
-
-export function buildPreviewState(
-  uuid: string,
-  name: string,
-  bytes: Uint8Array,
-): PreviewState {
-  const mediaType = getMediaType(name);
-  if (mediaType === "other") {
-    return { type: "unsupported", uuid, name };
-  }
-  const mimeType = getMimeType(name);
-  const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-  return mediaType === "image"
-    ? { type: "image", uuid, objectUrl, name }
-    : { type: "video", uuid, objectUrl, name };
-}

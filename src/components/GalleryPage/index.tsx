@@ -3,47 +3,8 @@ import { unzipSync } from "fflate";
 import { createDecryptedStream } from "../../utils/crypto";
 import classes from "./GalleryPage.module.css";
 import shared from "../shared.module.css";
-
-type GalleryImage = { name: string; objectUrl: string };
-
-type State =
-  | { type: "idle" }
-  | { type: "password"; file: File }
-  | { type: "loading"; file: File; progress: number }
-  | { type: "viewing"; file: File; images: GalleryImage[]; index: number }
-  | { type: "error"; file: File; message: string };
-
-const IMAGE_EXTENSIONS = new Set([
-  "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
-]);
-
-function getMimeType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "gif":
-      return "image/gif";
-    case "webp":
-      return "image/webp";
-    case "avif":
-      return "image/avif";
-    case "bmp":
-      return "image/bmp";
-    case "svg":
-      return "image/svg+xml";
-    default:
-      return "image/jpeg";
-  }
-}
-
-function isImageFile(filename: string): boolean {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  return ext !== undefined && IMAGE_EXTENSIONS.has(ext);
-}
+import type { GalleryImage, State } from "./GalleryPage.types";
+import { getMimeType, isImageFile } from "./GalleryPage.helpers";
 
 interface Props {
   initialFile?: File;

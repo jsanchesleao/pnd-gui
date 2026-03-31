@@ -1,0 +1,11 @@
+export type State =
+  | { type: "idle" }
+  | { type: "password"; file: File }
+  | { type: "loading"; file: File; progress: number }
+  | { type: "playing"; file: File; objectUrl: string }
+  | { type: "error"; file: File; message: string };
+
+export interface Props {
+  initialFile?: File;
+  onReset?: () => void;
+}

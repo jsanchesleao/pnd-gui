@@ -3,18 +3,7 @@ import { createDecryptedStream } from "../../utils/crypto";
 import { getMimeType } from "../../utils/mediaTypes";
 import classes from "./ImageViewerPage.module.css";
 import shared from "../shared.module.css";
-
-type State =
-  | { type: "idle" }
-  | { type: "password"; file: File }
-  | { type: "loading"; file: File; progress: number }
-  | { type: "viewing"; file: File; objectUrl: string }
-  | { type: "error"; file: File; message: string };
-
-interface Props {
-  initialFile?: File;
-  onReset?: () => void;
-}
+import type { Props, State } from "./ImageViewerPage.types";
 
 export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(

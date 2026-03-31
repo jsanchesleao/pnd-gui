@@ -3,25 +3,8 @@ import { VideoPlayerPage } from "../VideoPlayerPage";
 import { ImageViewerPage } from "../ImageViewerPage";
 import { GalleryPage } from "../GalleryPage";
 import shared from "../shared.module.css";
-
-type Viewer = "video" | "image" | "gallery";
-
-type State =
-  | { type: "idle" }
-  | { type: "viewing"; file: File; viewer: Viewer }
-  | { type: "unknown"; file: File };
-
-const VIDEO_EXTS = new Set(["mp4", "webm", "mkv", "mov", "avi"]);
-const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg"]);
-
-function detectViewer(filename: string): Viewer | null {
-  const base = filename.endsWith(".lock") ? filename.slice(0, -5) : filename;
-  const ext = base.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "zip") return "gallery";
-  if (VIDEO_EXTS.has(ext)) return "video";
-  if (IMAGE_EXTS.has(ext)) return "image";
-  return null;
-}
+import type { State } from "./PreviewPage.types";
+import { detectViewer } from "./PreviewPage.helpers";
 
 export const PreviewPage: React.FC = () => {
   const [state, setState] = useState<State>({ type: "idle" });
