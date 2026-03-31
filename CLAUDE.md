@@ -17,13 +17,15 @@ Run a single test file:
 npx vitest run src/utils/crypto.test.ts
 ```
 
+There is no separate linter — `tsc` (run as part of `npm run build`) enforces strict TypeScript including `noUnusedLocals` and `noUnusedParameters`.
+
 ## Architecture
 
 **pnd-gui** is a Tauri 2 desktop app (React + TypeScript frontend, minimal Rust backend) for password-based file encryption with three features: Encrypt/Decrypt, Preview, and Vault.
 
 ### Core utilities (`src/utils/`)
 
-- **`crypto.ts`** — All cryptography. PBKDF2 (100k iterations, SHA-256) for key derivation, AES-256-GCM for encrypt/decrypt. Exposes stream-based APIs (`createEncryptedStream`, `createDecryptedStream`) and byte-level APIs (`encryptBytesWithKey`, `decryptBytesWithKey`) for vault use.
+- **`crypto.ts`** — All cryptography. PBKDF2 (100k iterations, SHA-256) for key derivation, AES-256-GCM for encrypt/decrypt. Exposes stream-based APIs (`createEncryptedStream`, `createDecryptedStream`), a high-level helper `decryptFileToBytes(file, password, onProgress?)` that collects a decrypted stream into a `Uint8Array`, and byte-level APIs (`encryptBytesWithKey`, `decryptBytesWithKey`) for vault use.
 - **`frames.ts`** — Stream chunking protocol. Encryption splits data into fixed 1 MB frames; each frame gets its own IV and is prefixed with a 4-byte big-endian size header. Decryption reassembles via matching transforms.
 - **`vault.ts`** — Vault state machine. A vault is a folder containing `index.lock` (an AES-encrypted JSON index mapping file UUIDs to block keys and metadata) plus UUID-named encrypted block files (256 MB max each). `VaultState` is kept in memory; call `saveVault()` to persist.
 - **`mediaTypes.ts`** — Maps extensions to `FileCategory` (`image | video | audio | document | archive | code | other`) used throughout the UI.
@@ -33,11 +35,12 @@ npx vitest run src/utils/crypto.test.ts
 
 Each component lives in its own folder. Complex components are further split into sibling files (see **Folder conventions** below).
 
-- **`GenericPage/`** — Encrypt/Decrypt tab. Streams a file through `createEncryptedStream`/`createDecryptedStream` with progress tracking.
+- **`GenericPage/`** — Encrypt/Decrypt tab. Auto-detects mode from the file extension (`.lock` → decrypt, otherwise encrypt). Streams through `createEncryptedStream`/`createDecryptedStream` with progress tracking and mid-operation cancellation via `AbortController`.
 - **`PreviewPage/`** — Detects file type (strips `.lock` suffix) then delegates to `ImageViewerPage`, `VideoPlayerPage`, or `GalleryPage` (ZIP decompressed with fflate).
 - **`ImageViewerPage/`** — Decrypts a single image file to memory and displays it.
 - **`VideoPlayerPage/`** — Same pattern as ImageViewerPage but renders a `<video>` element.
 - **`GalleryPage/`** — Decrypts a ZIP archive and shows a keyboard-navigable image carousel.
+- **`DecryptingProgress/`** and **`DecryptError/`** — Shared UI components used by all three preview pages. `DecryptingProgress` takes `{ filename, progress: number }` and renders a progress bar; `DecryptError` takes `{ message, onTryAgain, onChangeFile }`.
 - **`VaultPage/`** — Most complex area:
   - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue.
   - `types.ts` — `Phase` discriminated union for the page state machine.
@@ -59,3 +62,5 @@ Each component lives in its own folder. Complex components are further split int
 - **Styling:** CSS Modules (`.module.css`) per component; shared button/input/progress styles in `components/shared.module.css`.
 - **State machines:** Use union types for phase/state (e.g., `"idle" | "processing" | "done" | "error"`), not boolean flags.
 - **Refs for callbacks:** In VaultPage, callbacks passed to child components are stored in refs to avoid stale closures in `useCallback` dependencies.
+- **Shared CSS classes:** `components/shared.module.css` defines `.container`, `.controls`, `.button-group`, `.progress`, and `.text`. Color variants on `.text` use the `data-text-type="success" | "failure"` attribute rather than separate classes.
+- **Tech debt tracking:** Known refactoring targets are documented in `docs/tech_debts.md`.
