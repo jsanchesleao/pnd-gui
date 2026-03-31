@@ -6,14 +6,41 @@
 
 :root {
     color-scheme: light dark;
+
+    /* Brand */
     --clr-bg: oklch(95% 5% 75deg);
     --clr-primary: oklch(60% 50% 30deg);
+
+    /* Borders */
+    --clr-border: oklch(70% 5% 75deg);
+    --clr-border-subtle: oklch(80% 3% 75deg);
+
+    /* Surfaces */
+    --clr-surface-inset: oklch(91% 2% 75deg);
+
+    /* Text */
+    --clr-text-muted: oklch(55% 5% 75deg);
+    --clr-text-faint: oklch(70% 2% 75deg);
+
+    /* Overlays */
+    --clr-overlay: oklch(5% 0% 0deg / 80%);
+    --clr-on-overlay: white;
+
+    /* Media */
+    --clr-media-bg: black;
+
+    /* Semantic */
+    --clr-success: green;
+    --clr-error: red;
+    --clr-progress-track: #e0e0e0;
+    --clr-progress-fill: #4caf50;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
         --clr-bg: oklch(20% 5% 75deg);
         --clr-primary: oklch(70% 50% 30deg);
+        --clr-surface-inset: oklch(22% 2% 75deg);
     }
 }
 
@@ -42,7 +69,7 @@ button {
     display: flex;
     gap: 0.25rem;
     padding: 0.5rem;
-    border-bottom: 1px solid oklch(70% 5% 75deg);
+    border-bottom: 1px solid var(--clr-border);
     justify-content: center;
 }
 
@@ -65,7 +92,7 @@ button {
 
     &.nav-btn--active {
         background-color: var(--clr-primary);
-        color: white;
+        color: var(--clr-on-overlay);
     }
 }
 

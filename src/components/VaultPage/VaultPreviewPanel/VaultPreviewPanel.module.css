@@ -1,7 +1,7 @@
 .preview-panel {
   position: absolute;
   inset: 0;
-  background-color: oklch(5% 0% 0deg / 80%);
+  background-color: var(--clr-overlay);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -27,6 +27,6 @@
 }
 
 .preview-loading {
-  color: white;
+  color: var(--clr-on-overlay);
   font-size: 1rem;
 }

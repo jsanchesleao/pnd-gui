@@ -1,5 +1,5 @@
 .folder-tree {
-  border-right: 1px solid oklch(70% 5% 75deg);
+  border-right: 1px solid var(--clr-border);
   overflow-y: auto;
   padding: 0.5rem 0;
 }

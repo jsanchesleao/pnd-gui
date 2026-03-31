@@ -36,12 +36,12 @@
     border: none;
 
     &::-webkit-progress-bar {
-        background-color: #e0e0e0;
+        background-color: var(--clr-progress-track);
         border-radius: 4px;
     }
 
     &::-webkit-progress-value {
-        background-color: #4caf50;
+        background-color: var(--clr-progress-fill);
         border-radius: 4px;
         transition: width 0.1s ease;
     }
@@ -49,10 +49,10 @@
 
 .text {
     &[data-text-type="success"] {
-        color: green;
+        color: var(--clr-success);
     }
 
     &[data-text-type="failure"] {
-        color: red;
+        color: var(--clr-error);
     }
 }

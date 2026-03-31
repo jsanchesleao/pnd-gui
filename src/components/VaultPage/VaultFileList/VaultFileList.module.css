@@ -12,7 +12,7 @@
   gap: 0.5rem;
   padding: 0.25rem 0 0.5rem;
   font-size: 0.8rem;
-  color: oklch(55% 5% 75deg);
+  color: var(--clr-text-muted);
   flex-shrink: 0;
 }
 
@@ -21,7 +21,7 @@
   padding: 0.1rem 0.3rem;
   background: transparent;
   color: inherit;
-  border: 1px solid oklch(70% 5% 75deg);
+  border: 1px solid var(--clr-border);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -31,13 +31,13 @@
   padding: 0.1rem 0.4rem;
   background: transparent;
   color: inherit;
-  border: 1px solid oklch(70% 5% 75deg);
+  border: 1px solid var(--clr-border);
   border-radius: 3px;
   cursor: pointer;
 }
 
 .file-list-empty {
-  color: oklch(60% 5% 75deg);
+  color: var(--clr-text-muted);
   font-size: 0.9rem;
   padding: 1rem 0;
 }
@@ -75,7 +75,7 @@
 
 .file-item-size {
   font-size: 0.8rem;
-  color: oklch(55% 5% 75deg);
+  color: var(--clr-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -105,7 +105,7 @@
   flex-direction: column;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid oklch(80% 3% 75deg);
+  border: 1px solid var(--clr-border-subtle);
   background: color-mix(in oklch, var(--clr-primary) 2%, transparent);
 
   &:hover {
@@ -121,15 +121,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: oklch(91% 2% 75deg);
+  background: var(--clr-surface-inset);
   cursor: default;
 }
 
-@media (prefers-color-scheme: dark) {
-  .file-grid-thumb {
-    background: oklch(22% 2% 75deg);
-  }
-}
 
 .file-grid-thumb-img {
   width: 100%;
@@ -146,7 +141,7 @@
   justify-content: center;
   font-size: 0.65rem;
   font-weight: 700;
-  color: white;
+  color: var(--clr-on-overlay);
   letter-spacing: 0.06em;
 }
 
@@ -154,7 +149,7 @@
   width: 60px;
   height: 60px;
   border-radius: 8px;
-  background: oklch(80% 3% 75deg);
+  background: var(--clr-border-subtle);
   animation: thumb-pulse 1.5s ease-in-out infinite;
 }
 
@@ -170,7 +165,7 @@
 .file-grid-actions {
   position: absolute;
   inset: 0;
-  background: oklch(5% 0% 0deg / 78%);
+  background: var(--clr-overlay);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -208,7 +203,7 @@
 
 .file-grid-size {
   font-size: 0.65rem;
-  color: oklch(55% 5% 75deg);
+  color: var(--clr-text-muted);
 }
 
 .file-grid-rename-input {

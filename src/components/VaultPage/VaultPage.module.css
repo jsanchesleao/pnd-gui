@@ -9,7 +9,7 @@
   display: flex;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid oklch(70% 5% 75deg);
+  border-bottom: 1px solid var(--clr-border);
   flex-wrap: wrap;
   align-items: center;
 }
@@ -42,7 +42,7 @@
 .add-progress-overlay {
   position: absolute;
   inset: 0;
-  background-color: oklch(5% 0% 0deg / 80%);
+  background-color: var(--clr-overlay);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -50,7 +50,7 @@
   gap: 1rem;
   z-index: 10;
   padding: 2rem;
-  color: white;
+  color: var(--clr-on-overlay);
 
   > p {
     font-size: 0.95rem;
