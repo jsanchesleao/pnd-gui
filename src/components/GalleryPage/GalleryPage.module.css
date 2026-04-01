@@ -28,6 +28,17 @@
     display: flex;
     align-items: center;
     gap: 1rem;
+
+    button {
+        background-color: transparent;
+        color: var(--clr-primary);
+        font-size: 2rem;
+        padding: 0;
+    }
+
+    button:hover {
+        color: color-mix(var(--clr-primary), 40% var(--clr-bg));
+    }
 }
 
 .counter {

@@ -6,14 +6,20 @@ interface Props {
   onChangeFile: () => void;
 }
 
-export const DecryptError: React.FC<Props> = ({ message, onTryAgain, onChangeFile }) => {
+export const DecryptError: React.FC<Props> = ({
+  message,
+  onTryAgain,
+  onChangeFile,
+}) => {
   return (
     <div className={shared.container}>
       <p className={shared.text} data-text-type="failure">
         Error: {message}
       </p>
-      <button onClick={onTryAgain}>Try again</button>
-      <button onClick={onChangeFile}>Change File</button>
+      <div className={shared.controls}>
+        <button onClick={onTryAgain}>Try again</button>
+        <button onClick={onChangeFile}>Change File</button>
+      </div>
     </div>
   );
 };

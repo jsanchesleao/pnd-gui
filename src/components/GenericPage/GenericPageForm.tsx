@@ -28,28 +28,30 @@ export const GenericPageForm: React.FC<Props> = ({
       {file.name}
     </p>
     <div className={shared.controls}>
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => onPasswordChange(e.target.value)}
-      />
+      <div className={shared["controls-row"]}>
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => onPasswordChange(e.target.value)}
+        />
+      </div>
       {isEncrypt && (
-        <select
-          value={chunkSize}
-          onChange={(e) => onChunkSizeChange(Number(e.target.value))}
-        >
-          {BLOCK_SIZE_OPTIONS.map(({ label, value }) => (
-            <option key={value} value={value}>
-              Block size: {label}
-            </option>
-          ))}
-        </select>
+        <div className={shared["controls-row"]}>
+          <select
+            value={chunkSize}
+            onChange={(e) => onChunkSizeChange(Number(e.target.value))}
+          >
+            {BLOCK_SIZE_OPTIONS.map(({ label, value }) => (
+              <option key={value} value={value}>
+                Block size: {label}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
       <div className={shared["button-group"]}>
-        <button onClick={onProcess}>
-          {isEncrypt ? "Encrypt" : "Decrypt"}
-        </button>
+        <button onClick={onProcess}>{isEncrypt ? "Encrypt" : "Decrypt"}</button>
         <button onClick={onChooseFile}>Change File</button>
       </div>
     </div>

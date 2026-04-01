@@ -5,6 +5,7 @@ export interface RecentVaultEntry {
   handle: FileSystemDirectoryHandle;
   lastOpened: number;
   favorite: boolean;
+  type?: "regular" | "private";
 }
 
 const DB_NAME = "pnd-recent-vaults";
@@ -49,13 +50,16 @@ export async function getRecentVaults(): Promise<RecentVaultEntry[]> {
   db.close();
 
   const favorites = all
-    .filter((e) => e.favorite)
+    .filter((e) => e.type !== "private" && e.favorite)
     .sort((a, b) => b.lastOpened - a.lastOpened);
   const nonFavorites = all
-    .filter((e) => !e.favorite)
+    .filter((e) => e.type !== "private" && !e.favorite)
+    .sort((a, b) => b.lastOpened - a.lastOpened);
+  const privates = all
+    .filter((e) => e.type === "private")
     .sort((a, b) => b.lastOpened - a.lastOpened);
 
-  return [...favorites, ...nonFavorites];
+  return [...favorites, ...nonFavorites, ...privates];
 }
 
 export async function addRecentVault(
@@ -91,7 +95,7 @@ export async function addRecentVault(
     // Enforce non-favorite limit within the same transaction
     const allAfterAdd: RecentVaultEntry[] = await idbRequest(store.getAll());
     const nonFavs = allAfterAdd
-      .filter((e) => !e.favorite)
+      .filter((e) => !e.favorite && e.type !== "private")
       .sort((a, b) => a.lastOpened - b.lastOpened); // ascending: oldest first
 
     const toDelete = nonFavs.slice(0, nonFavs.length - NON_FAVORITE_LIMIT);
@@ -149,7 +153,7 @@ export async function toggleFavorite(id: number): Promise<void> {
     // Un-favoriting: target re-enters the non-favorite pool.
     // nonFavs = others that were already non-favorites (sorted ascending = oldest first)
     const nonFavs = all
-      .filter((e) => !e.favorite && e.id !== id)
+      .filter((e) => !e.favorite && e.id !== id && e.type !== "private")
       .sort((a, b) => a.lastOpened - b.lastOpened);
 
     // After toggle: total non-favs = nonFavs.length + 1.
@@ -162,4 +166,44 @@ export async function toggleFavorite(id: number): Promise<void> {
 
   await txComplete(writeTx);
   db.close();
+}
+
+export async function createPrivateVaultEntry(
+  alias: string,
+  handle: FileSystemDirectoryHandle,
+): Promise<RecentVaultEntry> {
+  const db = await openDb();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+  const record = {
+    name: handle.name,
+    alias: alias.trim() || handle.name,
+    handle,
+    lastOpened: Date.now(),
+    favorite: false,
+    type: "private" as const,
+  };
+  const id = await idbRequest(store.add(record)) as number;
+  await txComplete(tx);
+  db.close();
+  return { ...record, id };
+}
+
+export async function touchRecentVault(id: number): Promise<void> {
+  const db = await openDb();
+  const readTx = db.transaction(STORE_NAME, "readonly");
+  const all: RecentVaultEntry[] = await idbRequest(readTx.objectStore(STORE_NAME).getAll());
+  await txComplete(readTx);
+
+  const target = all.find((e) => e.id === id);
+  if (!target) { db.close(); return; }
+
+  const writeTx = db.transaction(STORE_NAME, "readwrite");
+  await idbRequest(writeTx.objectStore(STORE_NAME).put({ ...target, lastOpened: Date.now() }));
+  await txComplete(writeTx);
+  db.close();
+}
+
+export async function deletePrivateVaultEntry(id: number): Promise<void> {
+  await removeRecentVault(id);
 }

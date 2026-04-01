@@ -86,3 +86,38 @@
     outline: none;
     min-width: 0;
 }
+
+.item--private {
+    border-left: 3px solid var(--clr-primary);
+}
+
+.private-badge {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--clr-primary) 15%, transparent);
+    color: var(--clr-primary);
+    margin-left: 0.5rem;
+    align-self: center;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.delete-btn {
+    flex-shrink: 0;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.85rem;
+    background: transparent;
+    color: var(--clr-text-faint);
+    border: none;
+    border-left: 1px solid var(--clr-border-subtle);
+    cursor: pointer;
+
+    &:hover {
+        filter: none;
+        color: var(--clr-error, #e05252);
+    }
+}

@@ -1,11 +1,12 @@
 import shared from "../shared.module.css";
 
 interface Props {
-  operation: "open" | "create";
+  operation: "open" | "create" | "create-private";
   password: string;
   subfolderName: string;
   error?: string;
   vaultName?: string;
+  privateAlias?: string;
   onPasswordChange: (value: string) => void;
   onSubfolderNameChange: (value: string) => void;
   onSubmit: () => void;
@@ -18,6 +19,7 @@ export const VaultUnlockForm: React.FC<Props> = ({
   subfolderName,
   error,
   vaultName,
+  privateAlias,
   onPasswordChange,
   onSubfolderNameChange,
   onSubmit,
@@ -29,7 +31,9 @@ export const VaultUnlockForm: React.FC<Props> = ({
         ? vaultName
           ? `Unlock ${vaultName}`
           : "Unlock vault"
-        : "Set master password for new vault"}
+        : operation === "create-private"
+          ? `Set master password for "${privateAlias}"`
+          : "Set master password for new vault"}
     </p>
     <div className={shared.controls}>
       <input

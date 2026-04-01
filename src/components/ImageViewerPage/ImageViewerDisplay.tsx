@@ -16,9 +16,11 @@ export const ImageViewerDisplay: React.FC<Props> = ({
 }) => (
   <div className={shared.container}>
     <img className={classes.image} src={objectUrl} alt={filename} />
-    <div className={shared["button-group"]}>
-      <button onClick={onClose}>Close Image</button>
-      <button onClick={onChooseAnother}>Choose another file</button>
+    <div className={shared.controls}>
+      <div className={shared["button-group"]}>
+        <button onClick={onClose}>Close Image</button>
+        <button onClick={onChooseAnother}>Choose another file</button>
+      </div>
     </div>
   </div>
 );

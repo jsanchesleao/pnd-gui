@@ -16,9 +16,24 @@
 
 .controls {
     display: flex;
+    flex-wrap: wrap;
     grid-row: 2;
-    flex-direction: column;
-    gap: 1rem;
+    flex-direction: row;
+    width: 100%;
+    gap: 0.5rem 1rem;
+
+    & > * {
+        flex: 1;
+    }
+
+    button {
+        border-radius: 0.5rem;
+    }
+}
+
+.controls-row {
+    flex-basis: 100%;
+    flex-grow: 1;
 }
 
 .button-group {

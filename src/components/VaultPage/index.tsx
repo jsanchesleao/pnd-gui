@@ -27,12 +27,16 @@ import {
 } from "./VaultPreviewPanel";
 import type { Phase } from "./types";
 import { VaultUnlockForm } from "./VaultUnlockForm";
+import { PrivateVaultDeleteDialog } from "./PrivateVaultDeleteDialog";
 import {
   addRecentVault,
+  createPrivateVaultEntry,
+  deletePrivateVaultEntry,
   getRecentVaults,
   removeRecentVault,
   renameRecentVault,
   toggleFavorite,
+  touchRecentVault,
   type RecentVaultEntry,
 } from "../../utils/recentVaults";
 import { VaultRecentList } from "./VaultRecentList";
@@ -165,15 +169,17 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   // ── Recent vaults ────────────────────────────────────────────────────────
 
   async function handleOpenRecent(entry: RecentVaultEntry) {
-    try {
-      const perm = await entry.handle.requestPermission({ mode: "readwrite" });
-      if (perm !== "granted") {
+    if (entry.type !== "private") {
+      try {
+        const perm = await entry.handle.requestPermission({ mode: "readwrite" });
+        if (perm !== "granted") {
+          await handleOpenVault();
+          return;
+        }
+      } catch {
         await handleOpenVault();
         return;
       }
-    } catch {
-      await handleOpenVault();
-      return;
     }
     setPassword("");
     setPageState({
@@ -181,6 +187,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       operation: "open",
       handle: entry.handle,
       vaultName: entry.alias ?? entry.name,
+      entryId: entry.id,
     });
   }
 
@@ -222,6 +229,70 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     }
   }
 
+  async function handleCreatePrivateVault() {
+    const alias = prompt("Private vault name:")?.trim();
+    if (!alias) return;
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      const vaultDirName = crypto.randomUUID();
+      const vaultHandle = await opfsRoot.getDirectoryHandle(vaultDirName, { create: true });
+      setPassword("");
+      setPageState({
+        phase: "unlocking",
+        operation: "create-private",
+        handle: vaultHandle,
+        privateAlias: alias,
+      });
+    } catch (e) {
+      alert(`Failed to create private vault: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  function handleDeletePrivateVault(entry: RecentVaultEntry) {
+    setPassword("");
+    setPageState({ phase: "confirm-delete-private", entry });
+  }
+
+  async function handleConfirmDeletePrivateVault() {
+    if (pageState.phase !== "confirm-delete-private" || !password) return;
+    const { entry } = pageState;
+
+    try {
+      await openVault(entry.handle, password);
+    } catch (e) {
+      setPageState({
+        ...pageState,
+        error:
+          e instanceof VaultError && e.code === "WRONG_PASSWORD"
+            ? "Wrong password."
+            : e instanceof Error
+              ? e.message
+              : String(e),
+      });
+      return;
+    }
+
+    try {
+      const opfsRoot = await navigator.storage.getDirectory();
+      await opfsRoot.removeEntry(entry.handle.name, { recursive: true });
+    } catch (e) {
+      setPageState({
+        ...pageState,
+        error: `Failed to delete vault data: ${e instanceof Error ? e.message : String(e)}`,
+      });
+      return;
+    }
+
+    try {
+      await deletePrivateVaultEntry(entry.id);
+    } catch {
+      /* non-fatal — OPFS data is already gone */
+    }
+
+    setRecentVaults((prev) => prev.filter((e) => e.id !== entry.id));
+    setPageState({ phase: "idle" });
+  }
+
   async function handleUnlock() {
     if (pageState.phase !== "unlocking" || !password) return;
     const { handle, operation } = pageState;
@@ -231,13 +302,20 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         const v = await openVault(handle, password);
         updateVault(v);
         try {
-          await addRecentVault(handle.name, handle);
+          const isPrivate =
+            pageState.entryId !== undefined &&
+            recentVaults.find((e) => e.id === pageState.entryId)?.type === "private";
+          if (isPrivate && pageState.entryId !== undefined) {
+            await touchRecentVault(pageState.entryId);
+          } else {
+            await addRecentVault(handle.name, handle);
+          }
           setRecentVaults(await getRecentVaults());
         } catch {
           /* non-fatal */
         }
         setPageState({ phase: "browsing", currentPath: "" });
-      } else {
+      } else if (operation === "create") {
         const trimmed = subfolderName.trim();
         const blobsDirHandle = trimmed
           ? await handle.getDirectoryHandle(trimmed, { create: true })
@@ -254,6 +332,21 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         try {
           await addRecentVault(handle.name, handle);
           setRecentVaults(await getRecentVaults());
+        } catch {
+          /* non-fatal */
+        }
+        setPageState({ phase: "browsing", currentPath: "" });
+      } else {
+        // create-private
+        const alias = pageState.privateAlias ?? handle.name;
+        const blobsDirHandle = await handle.getDirectoryHandle("blobs", { create: true });
+        const v = createEmptyVault(handle, blobsDirHandle, password, "blobs");
+        setPageState({ phase: "saving" });
+        await saveVault(v);
+        updateVault(v);
+        try {
+          const newEntry = await createPrivateVaultEntry(alias, handle);
+          setRecentVaults((prev) => [...prev, newEntry]);
         } catch {
           /* non-fatal */
         }
@@ -503,10 +596,12 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onRemove={handleRemoveRecent}
           onToggleFavorite={handleToggleFavorite}
           onRename={handleRenameRecent}
+          onDeletePrivate={handleDeletePrivateVault}
         />
         <div className={shared.controls}>
           <button onClick={handleOpenVault}>Open Vault</button>
           <button onClick={handleCreateVault}>New Vault</button>
+          <button onClick={handleCreatePrivateVault}>New Private Vault</button>
         </div>
       </div>
     );
@@ -520,9 +615,23 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         subfolderName={subfolderName}
         error={pageState.error}
         vaultName={pageState.vaultName}
+        privateAlias={pageState.privateAlias}
         onPasswordChange={setPassword}
         onSubfolderNameChange={setSubfolderName}
         onSubmit={handleUnlock}
+        onCancel={() => setPageState({ phase: "idle" })}
+      />
+    );
+  }
+
+  if (pageState.phase === "confirm-delete-private") {
+    return (
+      <PrivateVaultDeleteDialog
+        entry={pageState.entry}
+        password={password}
+        error={pageState.error}
+        onPasswordChange={setPassword}
+        onConfirm={handleConfirmDeletePrivateVault}
         onCancel={() => setPageState({ phase: "idle" })}
       />
     );

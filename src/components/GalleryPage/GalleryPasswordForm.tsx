@@ -17,16 +17,18 @@ export const GalleryPasswordForm: React.FC<Props> = ({
 }) => (
   <div className={shared.container}>
     <p>{file.name}</p>
-    <input
-      type="password"
-      placeholder="Password"
-      value={password}
-      onChange={(e) => onPasswordChange(e.target.value)}
-      onKeyDown={(e) => e.key === "Enter" && onDecrypt()}
-    />
-    <div className={shared["button-group"]}>
-      <button onClick={onDecrypt}>View</button>
-      <button onClick={onChangeFile}>Change File</button>
+    <div className={shared.controls}>
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => onPasswordChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onDecrypt()}
+      />
+      <div className={shared["button-group"]}>
+        <button onClick={onDecrypt}>View</button>
+        <button onClick={onChangeFile}>Change File</button>
+      </div>
     </div>
   </div>
 );
