@@ -12,6 +12,12 @@ npm run tauri dev  # Start full Tauri desktop app (requires Rust toolchain)
 npm run tauri build # Build distributable desktop app
 ```
 
+PWA / GitHub Pages build:
+```bash
+GITHUB_PAGES=true npm run build   # Sets base="/pnd-gui/" for GitHub Pages deployment
+npm run preview                   # Serve dist/ locally to verify the built PWA
+```
+
 Run a single test file:
 ```bash
 npx vitest run src/utils/crypto.test.ts
@@ -69,3 +75,12 @@ Each component lives in its own folder. Complex components are further split int
 - **Refs for callbacks:** In VaultPage, callbacks passed to child components are stored in refs to avoid stale closures in `useCallback` dependencies.
 - **Shared CSS classes:** `components/shared.module.css` defines `.container`, `.controls`, `.button-group`, `.progress`, and `.text`. Color variants on `.text` use the `data-text-type="success" | "failure"` attribute rather than separate classes.
 - **Tech debt tracking:** Known refactoring targets are documented in `docs/tech_debts.md`.
+
+### PWA and deployment
+
+The app is also deployable as a PWA (targeting iOS Safari). The strategy and full feature roadmap are in `docs/ios_pwa_port_plan.md`.
+
+- **`vite-plugin-pwa`** generates `sw.js`, `workbox-*.js`, and `manifest.webmanifest` into `dist/` at build time. The manifest is configured inline in `vite.config.ts` (not as a separate file).
+- **Base path:** `vite.config.ts` reads `GITHUB_PAGES=true` to switch `base` (and the manifest's `start_url` and icon paths) from `/` to `/pnd-gui/`. Local dev and Tauri builds are unaffected.
+- **Icons:** `public/icons/` holds the four PWA icon sizes. They are derived from `src-tauri/icons/icon.png` (512×512 RGBA source). Regenerate them by running the inline Node.js resize script used during initial setup — it decodes the PNG, does bilinear downscaling, and re-encodes without external dependencies.
+- **CI:** `.github/workflows/deploy.yml` builds with `GITHUB_PAGES=true` and deploys `dist/` to GitHub Pages via `actions/deploy-pages` on every push to `master`. Requires **Settings → Pages → Source → GitHub Actions** enabled in the repo once.
