@@ -53,7 +53,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   const [recentVaults, setRecentVaults] = useState<RecentVaultEntry[]>([]);
 
   useEffect(() => {
-    getRecentVaults().then(setRecentVaults).catch(() => {});
+    getRecentVaults()
+      .then(setRecentVaults)
+      .catch(() => {});
   }, []);
 
   const previewUrlRef = useRef<string | null>(null);
@@ -163,12 +165,21 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   async function handleOpenRecent(entry: RecentVaultEntry) {
     try {
       const perm = await entry.handle.requestPermission({ mode: "readwrite" });
-      if (perm !== "granted") { await handleOpenVault(); return; }
+      if (perm !== "granted") {
+        await handleOpenVault();
+        return;
+      }
     } catch {
-      await handleOpenVault(); return;
+      await handleOpenVault();
+      return;
     }
     setPassword("");
-    setPageState({ phase: "unlocking", operation: "open", handle: entry.handle, vaultName: entry.name });
+    setPageState({
+      phase: "unlocking",
+      operation: "open",
+      handle: entry.handle,
+      vaultName: entry.name,
+    });
   }
 
   async function handleRemoveRecent(id: number) {
@@ -215,7 +226,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         try {
           await addRecentVault(handle.name, handle);
           setRecentVaults(await getRecentVaults());
-        } catch { /* non-fatal */ }
+        } catch {
+          /* non-fatal */
+        }
         setPageState({ phase: "browsing", currentPath: "" });
       } else {
         const trimmed = subfolderName.trim();
@@ -234,7 +247,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         try {
           await addRecentVault(handle.name, handle);
           setRecentVaults(await getRecentVaults());
-        } catch { /* non-fatal */ }
+        } catch {
+          /* non-fatal */
+        }
         setPageState({ phase: "browsing", currentPath: "" });
       }
     } catch (e) {
@@ -451,15 +466,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
   if (pageState.phase === "idle") {
     return (
       <div className={shared.container}>
+        <VaultRecentList
+          entries={recentVaults}
+          onOpen={handleOpenRecent}
+          onRemove={handleRemoveRecent}
+          onToggleFavorite={handleToggleFavorite}
+        />
         <div className={shared.controls}>
           <button onClick={handleOpenVault}>Open Vault</button>
           <button onClick={handleCreateVault}>New Vault</button>
-          <VaultRecentList
-            entries={recentVaults}
-            onOpen={handleOpenRecent}
-            onRemove={handleRemoveRecent}
-            onToggleFavorite={handleToggleFavorite}
-          />
         </div>
       </div>
     );
