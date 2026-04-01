@@ -6,6 +6,7 @@ import { VitePWA } from "vite-plugin-pwa";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 const base = process.env.GITHUB_PAGES === "true" ? "/pnd-gui/" : "/";
+const b = base.replace(/\/$/, ""); // base without trailing slash for icon src paths
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -22,10 +23,10 @@ export default defineConfig(async () => ({
         background_color: "#000000",
         theme_color: "#000000",
         icons: [
-          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: `${b}/icons/icon-192.png`, sizes: "192x192", type: "image/png" },
+          { src: `${b}/icons/icon-512.png`, sizes: "512x512", type: "image/png" },
           {
-            src: "/icons/icon-512-maskable.png",
+            src: `${b}/icons/icon-512-maskable.png`,
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
