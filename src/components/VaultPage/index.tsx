@@ -400,6 +400,34 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     }
   }
 
+  async function handleDropFiles(files: File[]) {
+    if (!vault || pageState.phase !== "browsing") return;
+    const total = files.length;
+    setAddProgress(0);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const uuid = await addFileToVault(
+          vault,
+          bytes,
+          file.name,
+          pageState.currentPath,
+          (pct) => {
+            setAddProgress(Math.round(((i + pct / 100) / total) * 100));
+          },
+        );
+        if (getFileCategory(file.name) === "video") {
+          enqueueThumbnail(uuid);
+        }
+      }
+      setAddProgress(null);
+      await autoSave();
+    } catch {
+      setAddProgress(null);
+    }
+  }
+
   function handleNewFolder() {
     if (pageState.phase !== "browsing") return;
     const name = prompt("New folder name:");
@@ -655,6 +683,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
             setPageState({ ...pageState, currentPath: path })
           }
           onAddFiles={handleAddFiles}
+          onDropFiles={handleDropFiles}
           onNewFolder={handleNewFolder}
           onSave={handleSave}
           onClose={handleClose}

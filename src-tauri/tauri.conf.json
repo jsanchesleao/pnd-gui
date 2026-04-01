@@ -17,7 +17,8 @@
         "height": 480,
         "resizable": true,
         "maximizable": true,
-        "center": true
+        "center": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

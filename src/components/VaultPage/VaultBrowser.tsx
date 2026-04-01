@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
-import { buildFolderTree, getEntriesInPath, type VaultState } from "../../utils/vault";
+import { useEffect, useRef, useState } from "react";
+import {
+  buildFolderTree,
+  getEntriesInPath,
+  type VaultState,
+} from "../../utils/vault";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
 import classes from "./VaultPage.module.css";
@@ -9,6 +13,7 @@ interface Props {
   currentPath: string;
   onNavigate: (path: string) => void;
   onAddFiles: () => void;
+  onDropFiles: (files: File[]) => void;
   onNewFolder: () => void;
   onSave: () => void;
   onClose: () => void;
@@ -29,6 +34,7 @@ export const VaultBrowser: React.FC<Props> = ({
   currentPath,
   onNavigate,
   onAddFiles,
+  onDropFiles,
   onNewFolder,
   onSave,
   onClose,
@@ -44,6 +50,8 @@ export const VaultBrowser: React.FC<Props> = ({
   onDeleteSelected,
 }) => {
   const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
+  const dragCountRef = useRef(0);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   useEffect(() => {
     setSelectedUuids(new Set());
@@ -85,7 +93,10 @@ export const VaultBrowser: React.FC<Props> = ({
         <button onClick={onPaste} disabled={clipboard.length === 0}>
           Paste{clipboard.length > 0 ? ` (${clipboard.length})` : ""}
         </button>
-        <button onClick={handleDeleteSelected} disabled={selectedUuids.size === 0}>
+        <button
+          onClick={handleDeleteSelected}
+          disabled={selectedUuids.size === 0}
+        >
           Delete{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
         </button>
         <span className={classes["toolbar-spacer"]} />
@@ -97,7 +108,33 @@ export const VaultBrowser: React.FC<Props> = ({
         </button>
         <button onClick={onClose}>Close</button>
       </div>
-      <div className={classes.panels}>
+      <div
+        className={classes.panels}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          console.log("DRAG ENTER");
+          dragCountRef.current++;
+          setIsDragOver(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          console.log("DRAG OVER");
+        }}
+        onDragLeave={() => {
+          console.log("DRAG LEAVE");
+          dragCountRef.current--;
+          if (dragCountRef.current === 0) setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          console.log("DROPPED");
+          dragCountRef.current = 0;
+          setIsDragOver(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length > 0) onDropFiles(files);
+        }}
+        style={{ position: "relative" }}
+      >
         <VaultFolderTree
           tree={tree}
           currentPath={currentPath}
@@ -114,6 +151,11 @@ export const VaultBrowser: React.FC<Props> = ({
           selectedUuids={selectedUuids}
           onSelect={handleSelect}
         />
+        {isDragOver && (
+          <div className={classes["drop-overlay"]}>
+            <span>Drop files to add to vault</span>
+          </div>
+        )}
       </div>
     </div>
   );
