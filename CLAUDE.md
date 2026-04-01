@@ -45,10 +45,10 @@ Each component lives in its own folder. Complex components are further split int
 - **`VaultPage/`** — Most complex area:
   - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue. Contains `autoSave()` which calls `saveVault` silently (no phase change) — invoked automatically after add, delete, and paste. Cut/paste clipboard (`string[]`) lives here; selection state (`Set<string>`) lives in `VaultBrowser`.
   - `types.ts` — `Phase` discriminated union for the page state machine.
-  - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right). Owns `selectedUuids` state; clears selection via `useEffect` on `currentPath` changes. Toolbar has Cut (enabled when items selected) and Paste (enabled when clipboard non-empty) buttons.
+  - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right). Owns `selectedUuids` state; clears selection via `useEffect` on `currentPath` changes. Toolbar has Cut, Paste, and Delete buttons (each enabled/disabled based on selection or clipboard state); Delete shows a `confirm` dialog with the item count before calling `onDeleteSelected`.
   - `VaultRecentList/` — Shown in the idle phase. Displays recently opened vaults from IndexedDB with favorite toggle, inline rename (sets `alias`), and remove actions.
   - `VaultFolderTree/` — Virtual folder hierarchy derived from `entry.path` fields in the vault index.
-  - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`. Items support single-click selection (toggled via `onSelect`); action buttons stop click propagation to avoid accidentally toggling selection.
+  - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`. Items support single-click selection (toggled via `onSelect`); action buttons (Preview, Save, Rename) stop click propagation to avoid accidentally toggling selection. Move and Delete are toolbar-only operations.
   - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand.
 
 ### Data flow summary
@@ -57,7 +57,7 @@ Each component lives in its own folder. Complex components are further split int
 
 **Vault add file:** Bytes → split into 256 MB blocks → each block encrypted with a fresh random AES key → UUID-named file written to vault folder → block UUIDs + base64 keys recorded in in-memory index → `index.lock` auto-saved immediately after the operation completes.
 
-**Vault save:** `saveVault()` encrypts the in-memory index JSON and writes `index.lock`. Called automatically (`autoSave()`) after add, delete, and paste. Rename, move, and thumbnail generation set `vault.modified = true` but require the user to click the Save button.
+**Vault save:** `saveVault()` encrypts the in-memory index JSON and writes `index.lock`. Called automatically (`autoSave()`) after add, delete, and paste. Rename and thumbnail generation set `vault.modified = true` but require the user to click the Save button.
 
 ### Patterns to follow
 
