@@ -3,6 +3,8 @@ import {
   createDecryptedStream,
   createEncryptedStream,
 } from "../../utils/crypto";
+import { collectAndDownload } from "../../utils/download";
+import { fsaSupported } from "../../utils/platform";
 import shared from "../shared.module.css";
 import { DEFAULT_BLOCK_SIZE } from "./GenericPage.constants";
 import { GenericPageForm } from "./GenericPageForm";
@@ -24,8 +26,22 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
   const isEncrypt = mode === "encrypt";
 
   async function handleChooseFile() {
-    const [handle] = await window.showOpenFilePicker();
-    setFile(await handle.getFile());
+    if (fsaSupported) {
+      const [handle] = await window.showOpenFilePicker();
+      setFile(await handle.getFile());
+    } else {
+      await new Promise<void>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "*/*";
+        input.onchange = () => {
+          const picked = input.files?.[0];
+          if (picked) setFile(picked);
+          resolve();
+        };
+        input.click();
+      });
+    }
     setStatus("idle");
     setErrorMessage(null);
     setProgress(0);
@@ -45,8 +61,6 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
           : file.name.endsWith(".lock")
             ? file.name.slice(0, -5)
             : file.name + ".lock";
-      const saveHandle = await window.showSaveFilePicker({ suggestedName });
-      const writable = await saveHandle.createWritable();
       const totalBytes = file.size;
       let processedBytes = 0;
       const progressStream = new TransformStream<Uint8Array, Uint8Array>({
@@ -67,7 +81,13 @@ export const GenericPage: React.FC<GenericPageProps> = () => {
               file.stream().pipeThrough(progressStream),
               password,
             );
-      await processed.pipeTo(writable, { signal: abortController.signal });
+      if (fsaSupported) {
+        const saveHandle = await window.showSaveFilePicker({ suggestedName });
+        const writable = await saveHandle.createWritable();
+        await processed.pipeTo(writable, { signal: abortController.signal });
+      } else {
+        await collectAndDownload(processed, suggestedName, abortController.signal);
+      }
       setStatus("done");
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") {

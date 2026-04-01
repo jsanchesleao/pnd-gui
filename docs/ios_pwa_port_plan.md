@@ -176,7 +176,7 @@ Already likely present but must include `viewport-fit=cover` for safe-area inset
 ## Implementation order
 
 1. **PWA scaffolding** — `manifest.json`, iOS meta tags, service worker, HTTPS. Unblocks installation testing with no feature changes. (done)
-2. **`src/utils/platform.ts`** — export the `fsaSupported` boolean. Single source of truth for all conditional branches.
-3. **Encrypt / Decrypt tab** — branch on `fsaSupported`: keep existing path when `true`, render `<input type="file">` + download trigger when `false`. Crypto pipeline untouched.
+2. **`src/utils/platform.ts`** — export the `fsaSupported` boolean. Single source of truth for all conditional branches. (done)
+3. **Encrypt / Decrypt tab** — branch on `fsaSupported`: keep existing path when `true`, render `<input type="file">` + download trigger when `false`. Crypto pipeline untouched. (done)
 4. **Preview tab** — same `fsaSupported` branch for the file input only; everything else unchanged.
 5. **Vault page** — hide "Create Vault" and "Open Vault" buttons when `!fsaSupported`; hide regular vault entries in `VaultRecentList`. Private vault UI is already functional.
