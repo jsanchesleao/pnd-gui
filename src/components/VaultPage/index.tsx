@@ -300,7 +300,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
         }
       }
       setAddProgress(null);
-      updateVault({ ...vault });
+      await autoSave();
     } catch {
       setAddProgress(null);
     }
@@ -313,6 +313,16 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     const base = pageState.currentPath;
     const newPath = base === "" ? name.trim() : `${base}/${name.trim()}`;
     setPageState({ ...pageState, currentPath: newPath });
+  }
+
+  async function autoSave() {
+    if (!vault) return;
+    try {
+      await saveVault(vault);
+      updateVault({ ...vault });
+    } catch (e) {
+      alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   async function handleSave() {
@@ -366,7 +376,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       next.delete(uuid);
       return next;
     });
-    updateVault({ ...vault });
+    await autoSave();
   }
 
   function handleRename(uuid: string, newName: string): string | null {
