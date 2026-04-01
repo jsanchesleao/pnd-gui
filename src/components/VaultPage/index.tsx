@@ -31,6 +31,7 @@ import {
   addRecentVault,
   getRecentVaults,
   removeRecentVault,
+  renameRecentVault,
   toggleFavorite,
   type RecentVaultEntry,
 } from "../../utils/recentVaults";
@@ -178,7 +179,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
       phase: "unlocking",
       operation: "open",
       handle: entry.handle,
-      vaultName: entry.name,
+      vaultName: entry.alias ?? entry.name,
     });
   }
 
@@ -189,6 +190,11 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
   async function handleToggleFavorite(id: number) {
     await toggleFavorite(id);
+    setRecentVaults(await getRecentVaults());
+  }
+
+  async function handleRenameRecent(id: number, alias: string) {
+    await renameRecentVault(id, alias);
     setRecentVaults(await getRecentVaults());
   }
 
@@ -471,6 +477,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onOpen={handleOpenRecent}
           onRemove={handleRemoveRecent}
           onToggleFavorite={handleToggleFavorite}
+          onRename={handleRenameRecent}
         />
         <div className={shared.controls}>
           <button onClick={handleOpenVault}>Open Vault</button>

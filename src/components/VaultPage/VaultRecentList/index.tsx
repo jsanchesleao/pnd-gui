@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RecentVaultEntry } from "../../../utils/recentVaults";
 import classes from "./VaultRecentList.module.css";
 
@@ -6,6 +7,7 @@ interface Props {
   onOpen: (entry: RecentVaultEntry) => void;
   onRemove: (id: number) => void;
   onToggleFavorite: (id: number) => void;
+  onRename: (id: number, alias: string) => void;
 }
 
 export const VaultRecentList: React.FC<Props> = ({
@@ -13,7 +15,25 @@ export const VaultRecentList: React.FC<Props> = ({
   onOpen,
   onRemove,
   onToggleFavorite,
+  onRename,
 }) => {
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
+  function startEditing(entry: RecentVaultEntry) {
+    setEditingId(entry.id);
+    setEditingValue(entry.alias ?? entry.name);
+  }
+
+  function commitEdit(id: number) {
+    onRename(id, editingValue);
+    setEditingId(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
   if (entries.length === 0) return null;
 
   return (
@@ -29,12 +49,33 @@ export const VaultRecentList: React.FC<Props> = ({
           >
             ★
           </button>
+          {editingId === entry.id ? (
+            <input
+              className={classes["rename-input"]}
+              value={editingValue}
+              autoFocus
+              onChange={(e) => setEditingValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitEdit(entry.id);
+                else if (e.key === "Escape") cancelEdit();
+              }}
+              onBlur={() => commitEdit(entry.id)}
+            />
+          ) : (
+            <button
+              className={classes["name-btn"]}
+              onClick={() => onOpen(entry)}
+              title={entry.alias ?? entry.name}
+            >
+              {entry.alias ?? entry.name}
+            </button>
+          )}
           <button
-            className={classes["name-btn"]}
-            onClick={() => onOpen(entry)}
-            title={entry.name}
+            className={classes["rename-btn"]}
+            onClick={() => startEditing(entry)}
+            title="Rename"
           >
-            {entry.name}
+            ✎
           </button>
           <button
             className={classes["remove-btn"]}

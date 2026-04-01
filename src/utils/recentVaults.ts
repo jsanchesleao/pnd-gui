@@ -1,6 +1,7 @@
 export interface RecentVaultEntry {
   id: number;
   name: string;
+  alias?: string;
   handle: FileSystemDirectoryHandle;
   lastOpened: number;
   favorite: boolean;
@@ -108,6 +109,21 @@ export async function removeRecentVault(id: number): Promise<void> {
   const tx = db.transaction(STORE_NAME, "readwrite");
   await idbRequest(tx.objectStore(STORE_NAME).delete(id));
   await txComplete(tx);
+  db.close();
+}
+
+export async function renameRecentVault(id: number, alias: string): Promise<void> {
+  const db = await openDb();
+  const readTx = db.transaction(STORE_NAME, "readonly");
+  const all: RecentVaultEntry[] = await idbRequest(readTx.objectStore(STORE_NAME).getAll());
+  await txComplete(readTx);
+
+  const target = all.find((e) => e.id === id);
+  if (!target) { db.close(); return; }
+
+  const writeTx = db.transaction(STORE_NAME, "readwrite");
+  await idbRequest(writeTx.objectStore(STORE_NAME).put({ ...target, alias: alias.trim() || undefined }));
+  await txComplete(writeTx);
   db.close();
 }
 
