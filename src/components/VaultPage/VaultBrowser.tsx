@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { buildFolderTree, getEntriesInPath, type VaultState } from "../../utils/vault";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
@@ -19,6 +20,9 @@ interface Props {
   onGetThumbnail: (uuid: string) => Promise<string | null>;
   thumbnailGenerating: Set<string>;
   onEnqueueThumbnail: (uuid: string) => void;
+  clipboard: string[];
+  onCut: (uuids: string[]) => void;
+  onPaste: () => void;
 }
 
 export const VaultBrowser: React.FC<Props> = ({
@@ -37,7 +41,29 @@ export const VaultBrowser: React.FC<Props> = ({
   onGetThumbnail,
   thumbnailGenerating,
   onEnqueueThumbnail,
+  clipboard,
+  onCut,
+  onPaste,
 }) => {
+  const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSelectedUuids(new Set());
+  }, [currentPath]);
+
+  function handleSelect(uuid: string) {
+    setSelectedUuids((prev) => {
+      const next = new Set(prev);
+      next.has(uuid) ? next.delete(uuid) : next.add(uuid);
+      return next;
+    });
+  }
+
+  function handleCut() {
+    onCut(Array.from(selectedUuids));
+    setSelectedUuids(new Set());
+  }
+
   const tree = buildFolderTree(vault.index);
   const entries = getEntriesInPath(vault.index, currentPath);
   const breadcrumb = currentPath === "" ? "(root)" : currentPath;
@@ -47,6 +73,12 @@ export const VaultBrowser: React.FC<Props> = ({
       <div className={classes.toolbar}>
         <button onClick={onAddFiles}>+ Add Files</button>
         <button onClick={onNewFolder}>+ New Folder</button>
+        <button onClick={handleCut} disabled={selectedUuids.size === 0}>
+          Cut{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
+        </button>
+        <button onClick={onPaste} disabled={clipboard.length === 0}>
+          Paste{clipboard.length > 0 ? ` (${clipboard.length})` : ""}
+        </button>
         <span className={classes["toolbar-spacer"]} />
         <span style={{ fontSize: "0.85rem", opacity: 0.7 }}>{breadcrumb}</span>
         <span className={classes["toolbar-spacer"]} />
@@ -72,6 +104,8 @@ export const VaultBrowser: React.FC<Props> = ({
           onGetThumbnail={onGetThumbnail}
           thumbnailGenerating={thumbnailGenerating}
           onEnqueueThumbnail={onEnqueueThumbnail}
+          selectedUuids={selectedUuids}
+          onSelect={handleSelect}
         />
       </div>
     </div>

@@ -11,6 +11,8 @@ export const VaultFileItem: React.FC<ItemProps> = ({
   onDelete,
   onRename,
   onMove,
+  isSelected,
+  onSelect,
 }) => {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -40,7 +42,7 @@ export const VaultFileItem: React.FC<ItemProps> = ({
   }
 
   return (
-    <div className={classes["file-item"]}>
+    <div className={classes["file-item"]} data-selected={isSelected} onClick={() => onSelect(uuid)}>
       {renaming ? (
         <>
           <input
@@ -89,7 +91,7 @@ export const VaultFileItem: React.FC<ItemProps> = ({
             {entry.name}
           </span>
           <span className={classes["file-item-size"]}>{formatSize(entry.size)}</span>
-          <div className={classes["file-item-actions"]}>
+          <div className={classes["file-item-actions"]} onClick={(e) => e.stopPropagation()}>
             <button onClick={() => onPreview(uuid)} title="Preview">Preview</button>
             <button onClick={() => onExport(uuid)} title="Save to disk">Save</button>
             <button

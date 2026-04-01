@@ -52,6 +52,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     new Set(),
   );
   const [recentVaults, setRecentVaults] = useState<RecentVaultEntry[]>([]);
+  const [clipboard, setClipboard] = useState<string[]>([]);
 
   useEffect(() => {
     getRecentVaults()
@@ -396,6 +397,24 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     updateVault({ ...vault });
   }
 
+  function handleCut(uuids: string[]) {
+    setClipboard(uuids);
+  }
+
+  async function handlePaste() {
+    if (!vault || pageState.phase !== "browsing") return;
+    const dest = pageState.currentPath;
+    for (const uuid of clipboard) {
+      try {
+        moveFileInVault(vault, uuid, dest);
+      } catch {
+        // entry may have been deleted; skip
+      }
+    }
+    setClipboard([]);
+    await autoSave();
+  }
+
   async function handleExport(uuid: string) {
     if (!vault) return;
     const entry = vault.index.entries[uuid];
@@ -542,6 +561,9 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onGetThumbnail={handleGetThumbnail}
           thumbnailGenerating={thumbnailGenerating}
           onEnqueueThumbnail={enqueueThumbnail}
+          clipboard={clipboard}
+          onCut={handleCut}
+          onPaste={handlePaste}
         />
         {addProgress !== null && (
           <div className={classes["add-progress-overlay"]}>

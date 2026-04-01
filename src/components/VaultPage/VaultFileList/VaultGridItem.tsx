@@ -15,6 +15,8 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
   onGetThumbnail,
   isGenerating,
   onEnqueueThumbnail,
+  isSelected,
+  onSelect,
 }) => {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -44,7 +46,7 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
   }
 
   return (
-    <div className={classes["file-grid-item"]}>
+    <div className={classes["file-grid-item"]} data-selected={isSelected} onClick={() => onSelect(uuid)}>
       <div
         className={classes["file-grid-thumb"]}
         onDoubleClick={() => onPreview(uuid)}
@@ -56,7 +58,7 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
           onGetThumbnail={onGetThumbnail}
           onEnqueueThumbnail={onEnqueueThumbnail}
         />
-        <div className={classes["file-grid-actions"]}>
+        <div className={classes["file-grid-actions"]} onClick={(e) => e.stopPropagation()}>
           <button onClick={() => onPreview(uuid)}>Preview</button>
           <button onClick={() => onExport(uuid)}>Save</button>
           <button onClick={() => { setRenameValue(entry.name); setRenaming(true); }}>Rename</button>

@@ -48,10 +48,15 @@
   gap: 0.5rem;
   padding: 0.4rem 0.5rem;
   border-radius: 4px;
+  cursor: default;
 
   &:hover {
     background-color: color-mix(in oklch, var(--clr-primary) 8%, transparent);
   }
+}
+
+.file-item[data-selected="true"] {
+  background-color: color-mix(in oklch, var(--clr-primary) 18%, transparent);
 }
 
 .file-item-name {
@@ -107,10 +112,16 @@
   overflow: hidden;
   border: 1px solid var(--clr-border-subtle);
   background: color-mix(in oklch, var(--clr-primary) 2%, transparent);
+  cursor: default;
 
   &:hover {
     border-color: var(--clr-primary);
   }
+}
+
+.file-grid-item[data-selected="true"] {
+  border-color: var(--clr-primary);
+  background: color-mix(in oklch, var(--clr-primary) 10%, transparent);
 }
 
 .file-grid-thumb {

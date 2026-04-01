@@ -30,6 +30,7 @@ There is no separate linter — `tsc` (run as part of `npm run build`) enforces 
 - **`vault.ts`** — Vault state machine. A vault is a folder containing `index.lock` (an AES-encrypted JSON index mapping file UUIDs to block keys and metadata) plus UUID-named encrypted block files (256 MB max each). `VaultState` is kept in memory; call `saveVault()` to persist.
 - **`mediaTypes.ts`** — Maps extensions to `FileCategory` (`image | video | audio | document | archive | code | other`) used throughout the UI.
 - **`videoThumbnail.ts`** — Seeks a video blob to 2 s, captures a canvas frame, exports as WebP.
+- **`recentVaults.ts`** — Persists recently opened vaults in IndexedDB (`pnd-recent-vaults`). Each `RecentVaultEntry` stores the directory handle, a last-opened timestamp, a favorite flag, and an optional user-defined `alias` (display name only — never written to vault files). Non-favorite entries are capped at 5; favorites are unlimited.
 
 ### Component structure (`src/components/`)
 
@@ -42,18 +43,21 @@ Each component lives in its own folder. Complex components are further split int
 - **`GalleryPage/`** — Decrypts a ZIP archive and shows a keyboard-navigable image carousel.
 - **`DecryptingProgress/`** and **`DecryptError/`** — Shared UI components used by all three preview pages. `DecryptingProgress` takes `{ filename, progress: number }` and renders a progress bar; `DecryptError` takes `{ message, onTryAgain, onChangeFile }`.
 - **`VaultPage/`** — Most complex area:
-  - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue.
+  - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue. Contains `autoSave()` which calls `saveVault` silently (no phase change) — invoked automatically after add, delete, and paste. Cut/paste clipboard (`string[]`) lives here; selection state (`Set<string>`) lives in `VaultBrowser`.
   - `types.ts` — `Phase` discriminated union for the page state machine.
-  - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right).
+  - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right). Owns `selectedUuids` state; clears selection via `useEffect` on `currentPath` changes. Toolbar has Cut (enabled when items selected) and Paste (enabled when clipboard non-empty) buttons.
+  - `VaultRecentList/` — Shown in the idle phase. Displays recently opened vaults from IndexedDB with favorite toggle, inline rename (sets `alias`), and remove actions.
   - `VaultFolderTree/` — Virtual folder hierarchy derived from `entry.path` fields in the vault index.
-  - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`.
+  - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`. Items support single-click selection (toggled via `onSelect`); action buttons stop click propagation to avoid accidentally toggling selection.
   - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand.
 
 ### Data flow summary
 
 **Single file encrypt/decrypt:** File → `createFixedSizeFramesStream` → `createFrameMapperStream` (PBKDF2 + AES-GCM per frame) → `createVariableSizeFrameJoinStream` → write via File System Access API.
 
-**Vault add file:** Bytes → split into 256 MB blocks → each block encrypted with a fresh random AES key → UUID-named file written to vault folder → block UUIDs + base64 keys recorded in in-memory index → index serialized and encrypted to `index.lock` on save.
+**Vault add file:** Bytes → split into 256 MB blocks → each block encrypted with a fresh random AES key → UUID-named file written to vault folder → block UUIDs + base64 keys recorded in in-memory index → `index.lock` auto-saved immediately after the operation completes.
+
+**Vault save:** `saveVault()` encrypts the in-memory index JSON and writes `index.lock`. Called automatically (`autoSave()`) after add, delete, and paste. Rename, move, and thumbnail generation set `vault.modified = true` but require the user to click the Save button.
 
 ### Patterns to follow
 

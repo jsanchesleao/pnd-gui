@@ -17,6 +17,8 @@ export const VaultFileList: React.FC<Props> = ({
   onGetThumbnail,
   thumbnailGenerating,
   onEnqueueThumbnail,
+  selectedUuids,
+  onSelect,
 }) => {
   const [sortBy, setSortBy] = useState<SortMode>("name");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
@@ -81,6 +83,8 @@ export const VaultFileList: React.FC<Props> = ({
             onDelete={onDelete}
             onRename={onRename}
             onMove={onMove}
+            isSelected={selectedUuids.has(uuid)}
+            onSelect={onSelect}
           />
         ))
       ) : (
@@ -98,6 +102,8 @@ export const VaultFileList: React.FC<Props> = ({
               onGetThumbnail={onGetThumbnail}
               isGenerating={thumbnailGenerating.has(uuid)}
               onEnqueueThumbnail={onEnqueueThumbnail}
+              isSelected={selectedUuids.has(uuid)}
+              onSelect={onSelect}
             />
           ))}
         </div>
