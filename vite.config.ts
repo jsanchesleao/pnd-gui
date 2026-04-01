@@ -5,9 +5,11 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const base = process.env.GITHUB_PAGES === "true" ? "/pnd-gui/" : "/";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -15,7 +17,7 @@ export default defineConfig(async () => ({
       manifest: {
         name: "pnd",
         short_name: "pnd",
-        start_url: "/",
+        start_url: base,
         display: "standalone",
         background_color: "#000000",
         theme_color: "#000000",
