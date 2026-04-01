@@ -1,13 +1,42 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      manifest: {
+        name: "pnd",
+        short_name: "pnd",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#000000",
+        theme_color: "#000000",
+        icons: [
+          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "/icons/icon-512-maskable.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
+      workbox: {
+        // Precache compiled JS/CSS/HTML/WASM bundles only.
+        // Vault blobs, IDB, and OPFS data are never cached by the SW.
+        globPatterns: ["**/*.{js,css,html,wasm}"],
+      },
+    }),
+  ],
 
   test: {
     environment: "node",
