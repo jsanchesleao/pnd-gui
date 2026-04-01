@@ -13,9 +13,7 @@ export interface Props {
   entries: FileEntry[];
   onPreview: (uuid: string) => void;
   onExport: (uuid: string) => void;
-  onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;
-  onMove: (uuid: string, newPath: string) => void;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
   thumbnailGenerating: Set<string>;
   onEnqueueThumbnail: (uuid: string) => void;
@@ -28,9 +26,7 @@ export interface ItemProps {
   entry: VaultIndexEntry;
   onPreview: (uuid: string) => void;
   onExport: (uuid: string) => void;
-  onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;
-  onMove: (uuid: string, newPath: string) => void;
   isSelected: boolean;
   onSelect: (uuid: string) => void;
 }

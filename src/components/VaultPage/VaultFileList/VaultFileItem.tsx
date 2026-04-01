@@ -8,17 +8,13 @@ export const VaultFileItem: React.FC<ItemProps> = ({
   entry,
   onPreview,
   onExport,
-  onDelete,
   onRename,
-  onMove,
   isSelected,
   onSelect,
 }) => {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [renameError, setRenameError] = useState<string | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [moveValue, setMoveValue] = useState(entry.path);
 
   function handleRenameSubmit() {
     const name = renameValue.trim();
@@ -33,12 +29,6 @@ export const VaultFileItem: React.FC<ItemProps> = ({
       setRenaming(false);
       setRenameError(null);
     }
-  }
-
-  function handleMoveSubmit() {
-    const path = moveValue.trim().replace(/^\/|\/$/g, "");
-    onMove(uuid, path);
-    setMoving(false);
   }
 
   return (
@@ -63,24 +53,6 @@ export const VaultFileItem: React.FC<ItemProps> = ({
             <span style={{ color: "red", fontSize: "0.75rem" }}>{renameError}</span>
           )}
         </>
-      ) : moving ? (
-        <>
-          <input
-            className={classes["file-item-rename-input"]}
-            value={moveValue}
-            onChange={(e) => setMoveValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleMoveSubmit();
-              if (e.key === "Escape") setMoving(false);
-            }}
-            placeholder="Folder path (e.g. photos/summer)"
-            autoFocus
-          />
-          <div className={classes["file-item-actions"]}>
-            <button onClick={handleMoveSubmit} title="Confirm">✓</button>
-            <button onClick={() => setMoving(false)} title="Cancel">✕</button>
-          </div>
-        </>
       ) : (
         <>
           <span
@@ -99,20 +71,6 @@ export const VaultFileItem: React.FC<ItemProps> = ({
               title="Rename"
             >
               Rename
-            </button>
-            <button
-              onClick={() => { setMoveValue(entry.path); setMoving(true); }}
-              title="Move"
-            >
-              Move
-            </button>
-            <button
-              onClick={() => {
-                if (confirm(`Delete "${entry.name}"?`)) onDelete(uuid);
-              }}
-              title="Delete"
-            >
-              Delete
             </button>
           </div>
         </>

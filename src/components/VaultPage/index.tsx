@@ -359,22 +359,24 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     setPageState({ phase: "idle" });
   }
 
-  async function handleDelete(uuid: string) {
+  async function handleDeleteSelected(uuids: string[]) {
     if (!vault) return;
-    // Remove from queue before deleting so the processor doesn't try to generate a thumbnail for it
-    thumbnailQueueRef.current = thumbnailQueueRef.current.filter(
-      (id) => id !== uuid,
-    );
-    await removeFileFromVault(vault, uuid);
-    if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
-    const cachedUrl = thumbnailCacheRef.current.get(uuid);
-    if (cachedUrl) {
-      URL.revokeObjectURL(cachedUrl);
-      thumbnailCacheRef.current.delete(uuid);
+    for (const uuid of uuids) {
+      // Remove from queue before deleting so the processor doesn't try to generate a thumbnail for it
+      thumbnailQueueRef.current = thumbnailQueueRef.current.filter(
+        (id) => id !== uuid,
+      );
+      await removeFileFromVault(vault, uuid);
+      if (preview && "uuid" in preview && preview.uuid === uuid) revokePreview();
+      const cachedUrl = thumbnailCacheRef.current.get(uuid);
+      if (cachedUrl) {
+        URL.revokeObjectURL(cachedUrl);
+        thumbnailCacheRef.current.delete(uuid);
+      }
     }
     setThumbnailGenerating((prev) => {
       const next = new Set(prev);
-      next.delete(uuid);
+      uuids.forEach((uuid) => next.delete(uuid));
       return next;
     });
     await autoSave();
@@ -389,12 +391,6 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     } catch (e) {
       return e instanceof VaultError ? e.message : String(e);
     }
-  }
-
-  function handleMove(uuid: string, newPath: string) {
-    if (!vault) return;
-    moveFileInVault(vault, uuid, newPath);
-    updateVault({ ...vault });
   }
 
   function handleCut(uuids: string[]) {
@@ -555,15 +551,14 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onClose={handleClose}
           onPreview={handlePreview}
           onExport={handleExport}
-          onDelete={handleDelete}
           onRename={handleRename}
-          onMove={handleMove}
           onGetThumbnail={handleGetThumbnail}
           thumbnailGenerating={thumbnailGenerating}
           onEnqueueThumbnail={enqueueThumbnail}
           clipboard={clipboard}
           onCut={handleCut}
           onPaste={handlePaste}
+          onDeleteSelected={handleDeleteSelected}
         />
         {addProgress !== null && (
           <div className={classes["add-progress-overlay"]}>

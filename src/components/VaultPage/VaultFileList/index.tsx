@@ -11,9 +11,7 @@ export const VaultFileList: React.FC<Props> = ({
   entries,
   onPreview,
   onExport,
-  onDelete,
   onRename,
-  onMove,
   onGetThumbnail,
   thumbnailGenerating,
   onEnqueueThumbnail,
@@ -80,9 +78,7 @@ export const VaultFileList: React.FC<Props> = ({
             entry={entry}
             onPreview={onPreview}
             onExport={onExport}
-            onDelete={onDelete}
             onRename={onRename}
-            onMove={onMove}
             isSelected={selectedUuids.has(uuid)}
             onSelect={onSelect}
           />
@@ -96,9 +92,7 @@ export const VaultFileList: React.FC<Props> = ({
               entry={entry}
               onPreview={onPreview}
               onExport={onExport}
-              onDelete={onDelete}
               onRename={onRename}
-              onMove={onMove}
               onGetThumbnail={onGetThumbnail}
               isGenerating={thumbnailGenerating.has(uuid)}
               onEnqueueThumbnail={onEnqueueThumbnail}

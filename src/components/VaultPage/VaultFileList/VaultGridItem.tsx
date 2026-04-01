@@ -9,9 +9,7 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
   entry,
   onPreview,
   onExport,
-  onDelete,
   onRename,
-  onMove,
   onGetThumbnail,
   isGenerating,
   onEnqueueThumbnail,
@@ -21,8 +19,6 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [renameError, setRenameError] = useState<string | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [moveValue, setMoveValue] = useState(entry.path);
 
   function handleRenameSubmit() {
     const name = renameValue.trim();
@@ -37,12 +33,6 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
       setRenaming(false);
       setRenameError(null);
     }
-  }
-
-  function handleMoveSubmit() {
-    const path = moveValue.trim().replace(/^\/|\/$/g, "");
-    onMove(uuid, path);
-    setMoving(false);
   }
 
   return (
@@ -62,8 +52,6 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
           <button onClick={() => onPreview(uuid)}>Preview</button>
           <button onClick={() => onExport(uuid)}>Save</button>
           <button onClick={() => { setRenameValue(entry.name); setRenaming(true); }}>Rename</button>
-          <button onClick={() => { setMoveValue(entry.path); setMoving(true); }}>Move</button>
-          <button onClick={() => { if (confirm(`Delete "${entry.name}"?`)) onDelete(uuid); }}>Delete</button>
         </div>
       </div>
       <div className={classes["file-grid-bottom"]}>
@@ -84,24 +72,6 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
               <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={() => { setRenaming(false); setRenameError(null); }} title="Cancel">✕</button>
             </div>
             {renameError && <span style={{ color: "red", fontSize: "0.65rem" }}>{renameError}</span>}
-          </>
-        ) : moving ? (
-          <>
-            <input
-              className={classes["file-grid-rename-input"]}
-              value={moveValue}
-              onChange={(e) => setMoveValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleMoveSubmit();
-                if (e.key === "Escape") setMoving(false);
-              }}
-              placeholder="Folder path"
-              autoFocus
-            />
-            <div style={{ display: "flex", gap: "0.2rem" }}>
-              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={handleMoveSubmit} title="Confirm">✓</button>
-              <button style={{ fontSize: "0.65rem", padding: "0.1rem 0.3rem" }} onClick={() => setMoving(false)} title="Cancel">✕</button>
-            </div>
           </>
         ) : (
           <>

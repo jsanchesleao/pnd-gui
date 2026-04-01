@@ -14,15 +14,14 @@ interface Props {
   onClose: () => void;
   onPreview: (uuid: string) => void;
   onExport: (uuid: string) => void;
-  onDelete: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;
-  onMove: (uuid: string, newPath: string) => void;
   onGetThumbnail: (uuid: string) => Promise<string | null>;
   thumbnailGenerating: Set<string>;
   onEnqueueThumbnail: (uuid: string) => void;
   clipboard: string[];
   onCut: (uuids: string[]) => void;
   onPaste: () => void;
+  onDeleteSelected: (uuids: string[]) => void;
 }
 
 export const VaultBrowser: React.FC<Props> = ({
@@ -35,15 +34,14 @@ export const VaultBrowser: React.FC<Props> = ({
   onClose,
   onPreview,
   onExport,
-  onDelete,
   onRename,
-  onMove,
   onGetThumbnail,
   thumbnailGenerating,
   onEnqueueThumbnail,
   clipboard,
   onCut,
   onPaste,
+  onDeleteSelected,
 }) => {
   const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
 
@@ -64,6 +62,14 @@ export const VaultBrowser: React.FC<Props> = ({
     setSelectedUuids(new Set());
   }
 
+  function handleDeleteSelected() {
+    const uuids = Array.from(selectedUuids);
+    const n = uuids.length;
+    if (!confirm(`Delete ${n} item${n !== 1 ? "s" : ""}?`)) return;
+    onDeleteSelected(uuids);
+    setSelectedUuids(new Set());
+  }
+
   const tree = buildFolderTree(vault.index);
   const entries = getEntriesInPath(vault.index, currentPath);
   const breadcrumb = currentPath === "" ? "(root)" : currentPath;
@@ -78,6 +84,9 @@ export const VaultBrowser: React.FC<Props> = ({
         </button>
         <button onClick={onPaste} disabled={clipboard.length === 0}>
           Paste{clipboard.length > 0 ? ` (${clipboard.length})` : ""}
+        </button>
+        <button onClick={handleDeleteSelected} disabled={selectedUuids.size === 0}>
+          Delete{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
         </button>
         <span className={classes["toolbar-spacer"]} />
         <span style={{ fontSize: "0.85rem", opacity: 0.7 }}>{breadcrumb}</span>
@@ -98,9 +107,7 @@ export const VaultBrowser: React.FC<Props> = ({
           entries={entries}
           onPreview={onPreview}
           onExport={onExport}
-          onDelete={onDelete}
           onRename={onRename}
-          onMove={onMove}
           onGetThumbnail={onGetThumbnail}
           thumbnailGenerating={thumbnailGenerating}
           onEnqueueThumbnail={onEnqueueThumbnail}
