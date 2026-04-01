@@ -175,7 +175,7 @@ Already likely present but must include `viewport-fit=cover` for safe-area inset
 
 ## Implementation order
 
-1. **PWA scaffolding** — `manifest.json`, iOS meta tags, service worker, HTTPS. Unblocks installation testing with no feature changes.
+1. **PWA scaffolding** — `manifest.json`, iOS meta tags, service worker, HTTPS. Unblocks installation testing with no feature changes. (done)
 2. **`src/utils/platform.ts`** — export the `fsaSupported` boolean. Single source of truth for all conditional branches.
 3. **Encrypt / Decrypt tab** — branch on `fsaSupported`: keep existing path when `true`, render `<input type="file">` + download trigger when `false`. Crypto pipeline untouched.
 4. **Preview tab** — same `fsaSupported` branch for the file input only; everything else unchanged.
