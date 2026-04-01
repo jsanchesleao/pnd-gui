@@ -7,7 +7,8 @@
     height: 100%;
 
     input[type="password"],
-    input[type="text"] {
+    input[type="text"],
+    select {
         width: 100%;
         padding: 0.5rem 1rem;
     }
