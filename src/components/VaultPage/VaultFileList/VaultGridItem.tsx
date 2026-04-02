@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Download, Eye, Pencil } from "lucide-react";
 import type { GridItemProps } from "./VaultFileList.types";
 import { formatSize } from "./VaultFileList.helpers";
 import { VaultThumbnail } from "./VaultThumbnail";
@@ -49,9 +50,9 @@ export const VaultGridItem: React.FC<GridItemProps> = ({
           onEnqueueThumbnail={onEnqueueThumbnail}
         />
         <div className={classes["file-grid-actions"]} onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => onPreview(uuid)}>Preview</button>
-          <button onClick={() => onExport(uuid)}>Save</button>
-          <button onClick={() => { setRenameValue(entry.name); setRenaming(true); }}>Rename</button>
+          <button onClick={() => onPreview(uuid)} title="Preview"><Eye size={15} /></button>
+          <button onClick={() => onExport(uuid)} title="Save to disk"><Download size={15} /></button>
+          <button onClick={() => { setRenameValue(entry.name); setRenaming(true); }} title="Rename"><Pencil size={15} /></button>
         </div>
       </div>
       <div className={classes["file-grid-bottom"]}>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LayoutGrid, List } from "lucide-react";
 import type { Props, SortMode, SortOrder, ViewMode } from "./VaultFileList.types";
 import { sortEntries } from "./VaultFileList.helpers";
 import { VaultFileItem } from "./VaultFileItem";
@@ -59,14 +60,14 @@ export const VaultFileList: React.FC<Props> = ({
             onClick={() => setViewMode("list")}
             title="List view"
           >
-            List
+            <List size={14} />
           </button>
           <button
             data-active={viewMode === "grid"}
             onClick={() => setViewMode("grid")}
             title="Grid view"
           >
-            Grid
+            <LayoutGrid size={14} />
           </button>
         </div>
       </div>

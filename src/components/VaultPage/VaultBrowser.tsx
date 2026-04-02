@@ -5,6 +5,7 @@ import {
   type VaultState,
 } from "../../utils/vault";
 import { fsaSupported } from "../../utils/platform";
+import { ClipboardPaste, FilePlus2, FolderPlus, Save, Scissors, Trash2, X } from "lucide-react";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
 import classes from "./VaultPage.module.css";
@@ -86,28 +87,40 @@ export const VaultBrowser: React.FC<Props> = ({
   return (
     <div className={classes.browser}>
       <div className={classes.toolbar}>
-        <button onClick={onAddFiles}>+ Add Files</button>
-        <button onClick={onNewFolder}>+ New Folder</button>
-        <button onClick={handleCut} disabled={selectedUuids.size === 0}>
-          Cut{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
+        <button onClick={onAddFiles} title="Add files"><FilePlus2 size={16} /></button>
+        <button onClick={onNewFolder} title="New folder"><FolderPlus size={16} /></button>
+        <button
+          onClick={handleCut}
+          disabled={selectedUuids.size === 0}
+          title={selectedUuids.size > 0 ? `Cut (${selectedUuids.size})` : "Cut"}
+        >
+          <Scissors size={16} />
+          {selectedUuids.size > 0 && <span className={classes["btn-badge"]}>{selectedUuids.size}</span>}
         </button>
-        <button onClick={onPaste} disabled={clipboard.length === 0}>
-          Paste{clipboard.length > 0 ? ` (${clipboard.length})` : ""}
+        <button
+          onClick={onPaste}
+          disabled={clipboard.length === 0}
+          title={clipboard.length > 0 ? `Paste (${clipboard.length})` : "Paste"}
+        >
+          <ClipboardPaste size={16} />
+          {clipboard.length > 0 && <span className={classes["btn-badge"]}>{clipboard.length}</span>}
         </button>
         <button
           onClick={handleDeleteSelected}
           disabled={selectedUuids.size === 0}
+          title={selectedUuids.size > 0 ? `Delete (${selectedUuids.size})` : "Delete"}
         >
-          Delete{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
+          <Trash2 size={16} />
+          {selectedUuids.size > 0 && <span className={classes["btn-badge"]}>{selectedUuids.size}</span>}
         </button>
         <span className={classes["toolbar-spacer"]} />
         <span style={{ fontSize: "0.85rem", opacity: 0.7 }}>{breadcrumb}</span>
         <span className={classes["toolbar-spacer"]} />
-        <button onClick={onSave} disabled={!vault.modified}>
+        <button onClick={onSave} disabled={!vault.modified} title="Save vault">
           {vault.modified && <span className={classes["modified-dot"]} />}
-          Save
+          <Save size={16} />
         </button>
-        <button onClick={onClose}>Close</button>
+        <button onClick={onClose} title="Close vault"><X size={16} /></button>
       </div>
       <div
         className={classes.panels}

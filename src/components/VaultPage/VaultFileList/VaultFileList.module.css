@@ -92,8 +92,10 @@
 }
 
 .file-item-actions button {
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
+  padding: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Grid view ─────────────────────────────────────────────────────────── */
@@ -192,8 +194,10 @@
 }
 
 .file-grid-actions button {
-  padding: 0.18rem 0.3rem;
-  font-size: 0.65rem;
+  padding: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .file-grid-bottom {
@@ -236,8 +240,10 @@
 }
 
 .view-toggle button {
-  padding: 0.1rem 0.45rem;
-  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 3px;
 }
 

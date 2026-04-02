@@ -15,8 +15,17 @@
 }
 
 .toolbar button {
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem 0.5rem;
   font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.btn-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .toolbar-spacer {
@@ -29,7 +38,7 @@
   border-radius: 50%;
   background-color: var(--clr-primary);
   display: inline-block;
-  margin-right: 0.25rem;
+  flex-shrink: 0;
 }
 
 .panels {
