@@ -37,6 +37,8 @@ There is no separate linter — `tsc` (run as part of `npm run build`) enforces 
 - **`mediaTypes.ts`** — Maps extensions to `FileCategory` (`image | video | audio | document | archive | code | other`) used throughout the UI.
 - **`videoThumbnail.ts`** — Seeks a video blob to 2 s, captures a canvas frame, exports as WebP.
 - **`recentVaults.ts`** — Persists recently opened vaults in IndexedDB (`pnd-recent-vaults`). Each `RecentVaultEntry` stores the directory handle, a last-opened timestamp, a favorite flag, an optional user-defined `alias` (display name only — never written to vault files), and an optional `type` (`"regular" | "private"`). Non-favorite regular entries are capped at 5; favorites and private entries are unlimited. Private vaults are registered once via `createPrivateVaultEntry` and deleted via `deletePrivateVaultEntry`; they are listed separately at the bottom of `VaultRecentList`.
+- **`platform.ts`** — Runtime compatibility detection. Exports `fsaSupported` (boolean, evaluated once at module load) and two file-picker helpers: `pickFile()` (single file) and `pickFiles()` (multi-select). Both use `showOpenFilePicker` when `fsaSupported` is true, otherwise fall back to a programmatic `<input type="file">` click.
+- **`download.ts`** — Browser-download helpers. `downloadBlob(blob, filename)` creates an object URL, clicks an `<a download>` element, and revokes the URL. `collectAndDownload(stream, filename, signal)` collects a `ReadableStream` into a `Blob` then calls `downloadBlob`; used by `GenericPage` for the compat-mode save path.
 
 ### Component structure (`src/components/`)
 
@@ -53,7 +55,7 @@ Each component lives in its own folder. Complex components are further split int
   - `types.ts` — `Phase` discriminated union for the page state machine.
   - `VaultBrowser.tsx` — Toolbar + two-panel shell (folder tree left, file list right). Owns `selectedUuids` state; clears selection via `useEffect` on `currentPath` changes. Toolbar has Cut, Paste, and Delete buttons (each enabled/disabled based on selection or clipboard state); Delete shows a `confirm` dialog with the item count before calling `onDeleteSelected`.
   - `VaultRecentList/` — Shown in the idle phase. Displays recently opened vaults from IndexedDB with favorite toggle, inline rename (sets `alias`), and remove actions. Private vault entries render with a lock badge and trigger `PrivateVaultDeleteDialog` instead of a plain remove.
-  - `PrivateVaultDeleteDialog.tsx` — Confirmation dialog for deleting a private vault entry (removes it from IndexedDB only; does not touch the vault folder on disk).
+  - `PrivateVaultDeleteDialog.tsx` — Password-verified deletion dialog for private vaults. On confirm, removes the OPFS directory (`opfsRoot.removeEntry`) and then the IndexedDB entry — this is a destructive, irrecoverable operation.
   - `VaultFolderTree/` — Virtual folder hierarchy derived from `entry.path` fields in the vault index.
   - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`. Items support single-click selection (toggled via `onSelect`); action buttons (Preview, Save, Rename) stop click propagation to avoid accidentally toggling selection. Move and Delete are toolbar-only operations.
   - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand.
@@ -70,7 +72,8 @@ Each component lives in its own folder. Complex components are further split int
 
 - **Folder conventions:** Each component folder may contain sibling files named `ComponentName.types.ts` (discriminated unions, interfaces), `ComponentName.constants.ts` (lookup tables, option arrays), `ComponentName.helpers.ts` (pure utility functions), and individual sub-component files (`SubComponent.tsx`). The `index.tsx` imports from these siblings and contains only the component body. CSS Modules are co-located as `ComponentName.module.css`. Page-level state branches that render non-trivial UI are also extracted to named sub-components (e.g. `GalleryCarousel.tsx`, `VaultUnlockForm.tsx`) rather than returned inline from `if (state.type === "...")` blocks; only truly minimal branches (a single button, a one-line message) stay inline.
 - **Error handling:** Vault operations throw `VaultError` with typed codes (`WRONG_PASSWORD`, `INVALID_FORMAT`, `DUPLICATE_NAME`, `NOT_FOUND`). Crypto decryption returns `null` on failure.
-- **Styling:** CSS Modules (`.module.css`) per component; shared button/input/progress styles in `components/shared.module.css`.
+- **Styling:** CSS Modules (`.module.css`) per component; shared button/input/progress styles in `components/shared.module.css`. Icons in `VaultPage` use `lucide-react` (MIT, tree-shaken); import individual named exports (e.g. `import { Eye, Download } from "lucide-react"`).
+- **Compatibility mode:** All File System Access API calls must be guarded by `fsaSupported` from `src/utils/platform.ts`. Use `pickFile()` / `pickFiles()` instead of calling `showOpenFilePicker` directly. For save operations when `!fsaSupported`, use `downloadBlob` from `src/utils/download.ts` instead of `showSaveFilePicker`. Regular (FSAA-backed) vault UI is hidden entirely when `!fsaSupported`; only private (OPFS-backed) vaults are available.
 - **State machines:** Use union types for phase/state (e.g., `"idle" | "processing" | "done" | "error"`), not boolean flags.
 - **Refs for callbacks:** In VaultPage, callbacks passed to child components are stored in refs to avoid stale closures in `useCallback` dependencies.
 - **Shared CSS classes:** `components/shared.module.css` defines `.container`, `.controls`, `.button-group`, `.progress`, and `.text`. Color variants on `.text` use the `data-text-type="success" | "failure"` attribute rather than separate classes.
@@ -78,7 +81,7 @@ Each component lives in its own folder. Complex components are further split int
 
 ### PWA and deployment
 
-The app is also deployable as a PWA (targeting iOS Safari). The strategy and full feature roadmap are in `docs/ios_pwa_port_plan.md`.
+The app is also deployable as a PWA (targeting iOS Safari). The strategy and full feature roadmap are in `docs/ios_pwa_port_plan.md`. Steps 1–5 of that plan are complete: PWA scaffolding, `platform.ts` detection, GenericPage compat mode, Preview tab compat mode, and Vault page compat mode.
 
 - **`vite-plugin-pwa`** generates `sw.js`, `workbox-*.js`, and `manifest.webmanifest` into `dist/` at build time. The manifest is configured inline in `vite.config.ts` (not as a separate file).
 - **Base path:** `vite.config.ts` reads `GITHUB_PAGES=true` to switch `base` (and the manifest's `start_url` and icon paths) from `/` to `/pnd-gui/`. Local dev and Tauri builds are unaffected.
