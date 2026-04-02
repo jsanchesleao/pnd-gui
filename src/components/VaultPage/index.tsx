@@ -114,7 +114,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
           thumbBytes = await generateVideoThumbnail(firstPartBytes, mime);
         }
 
-        if (!thumbBytes && entry.parts.length > 1) {
+        if (!thumbBytes && entry.parts.length > 1 && fsaSupported) {
           const fullBytes = await decryptVaultFile(currentVault, uuid);
           if (fullBytes) {
             thumbBytes = await generateVideoThumbnail(fullBytes, mime);
@@ -388,6 +388,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
     if (total === 0) return;
     setAddProgress(0);
     try {
+      const videoUuids: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -401,11 +402,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
           },
         );
         if (getFileCategory(file.name) === "video") {
-          enqueueThumbnail(uuid);
+          videoUuids.push(uuid);
         }
       }
       setAddProgress(null);
       await autoSave();
+      if (videoUuids.length > 0) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        for (const uuid of videoUuids) enqueueThumbnail(uuid);
+      }
     } catch {
       setAddProgress(null);
     }
@@ -416,6 +421,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
     const total = files.length;
     setAddProgress(0);
     try {
+      const videoUuids: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -429,11 +435,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
           },
         );
         if (getFileCategory(file.name) === "video") {
-          enqueueThumbnail(uuid);
+          videoUuids.push(uuid);
         }
       }
       setAddProgress(null);
       await autoSave();
+      if (videoUuids.length > 0) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        for (const uuid of videoUuids) enqueueThumbnail(uuid);
+      }
     } catch {
       setAddProgress(null);
     }

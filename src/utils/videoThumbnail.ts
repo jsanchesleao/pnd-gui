@@ -19,6 +19,7 @@ export async function generateVideoThumbnail(
     return await new Promise<Uint8Array | null>((resolve) => {
       const video = document.createElement("video");
       video.muted = true;
+      video.playsInline = true;
       video.preload = "metadata";
 
       let settled = false;
