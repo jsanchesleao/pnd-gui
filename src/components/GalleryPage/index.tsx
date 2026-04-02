@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { unzipSync } from "fflate";
 import { decryptFileToBytes } from "../../utils/crypto";
+import { pickFile } from "../../utils/platform";
 import shared from "../shared.module.css";
 import type { GalleryImage, State } from "./GalleryPage.types";
 import { getMimeType, isImageFile } from "./GalleryPage.helpers";
@@ -35,8 +36,8 @@ export const GalleryPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   async function handleChooseFile() {
-    const [handle] = await window.showOpenFilePicker();
-    const file = await handle.getFile();
+    const file = await pickFile();
+    if (!file) return;
     revokeAllUrls();
     setPassword("");
     setState({ type: "password", file });

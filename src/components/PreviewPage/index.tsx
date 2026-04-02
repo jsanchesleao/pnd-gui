@@ -5,13 +5,14 @@ import { GalleryPage } from "../GalleryPage";
 import shared from "../shared.module.css";
 import type { State } from "./PreviewPage.types";
 import { detectViewer } from "./PreviewPage.helpers";
+import { pickFile } from "../../utils/platform";
 
 export const PreviewPage: React.FC = () => {
   const [state, setState] = useState<State>({ type: "idle" });
 
   async function handleChooseFile() {
-    const [handle] = await window.showOpenFilePicker();
-    const file = await handle.getFile();
+    const file = await pickFile();
+    if (!file) return;
     const viewer = detectViewer(file.name);
     if (viewer === null) {
       setState({ type: "unknown", file });

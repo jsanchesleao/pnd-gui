@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { decryptFileToBytes } from "../../utils/crypto";
 import { getMimeType } from "../../utils/mediaTypes";
+import { pickFile } from "../../utils/platform";
 import shared from "../shared.module.css";
 import type { Props, State } from "./ImageViewerPage.types";
 import { ImageViewerForm } from "./ImageViewerForm";
@@ -31,8 +32,8 @@ export const ImageViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   async function handleChooseFile() {
-    const [handle] = await window.showOpenFilePicker();
-    const file = await handle.getFile();
+    const file = await pickFile();
+    if (!file) return;
     revokeCurrentUrl();
     setPassword("");
     setState({ type: "password", file });
