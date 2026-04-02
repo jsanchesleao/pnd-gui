@@ -45,10 +45,15 @@ import { downloadBlob } from "../../utils/download";
 
 interface Props {
   onModifiedChange?: (modified: boolean) => void;
+  onActiveChange?: (active: boolean) => void;
 }
 
-export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
+export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange }) => {
   const [pageState, setPageState] = useState<Phase>({ phase: "idle" });
+
+  useEffect(() => {
+    onActiveChange?.(pageState.phase !== "idle");
+  }, [pageState.phase]);
   const [vault, setVaultState] = useState<VaultState | null>(null);
   const [password, setPassword] = useState("");
   const [subfolderName, setSubfolderName] = useState("");

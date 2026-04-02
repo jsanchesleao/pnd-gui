@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { VideoPlayerPage } from "../VideoPlayerPage";
 import { ImageViewerPage } from "../ImageViewerPage";
 import { GalleryPage } from "../GalleryPage";
@@ -7,8 +7,16 @@ import type { State } from "./PreviewPage.types";
 import { detectViewer } from "./PreviewPage.helpers";
 import { pickFile } from "../../utils/platform";
 
-export const PreviewPage: React.FC = () => {
+interface Props {
+  onActiveChange?: (active: boolean) => void;
+}
+
+export const PreviewPage: React.FC<Props> = ({ onActiveChange }) => {
   const [state, setState] = useState<State>({ type: "idle" });
+
+  useEffect(() => {
+    onActiveChange?.(state.type !== "idle");
+  }, [state.type]);
 
   async function handleChooseFile() {
     const file = await pickFile();

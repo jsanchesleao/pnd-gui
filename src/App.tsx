@@ -8,7 +8,11 @@ type Page = "main" | "preview" | "vault";
 
 function App() {
   const [page, setPage] = useState<Page>("main");
+  const [previewActive, setPreviewActive] = useState(false);
+  const [vaultActive, setVaultActive] = useState(false);
   const vaultModifiedRef = useRef(false);
+
+  const hideNav = (page === "preview" && previewActive) || (page === "vault" && vaultActive);
 
   function handleNavClick(target: Page) {
     if (page === "vault" && target !== "vault" && vaultModifiedRef.current) {
@@ -19,7 +23,7 @@ function App() {
 
   return (
     <div className="main-wrapper">
-      <nav className="nav">
+      <nav className={hideNav ? "nav nav--hidden-mobile" : "nav"}>
         <button
           className={page === "main" ? "nav-btn nav-btn--active" : "nav-btn"}
           onClick={() => handleNavClick("main")}
@@ -41,9 +45,12 @@ function App() {
       </nav>
       <main>
         {page === "main" && <GenericPage />}
-        {page === "preview" && <PreviewPage />}
+        {page === "preview" && <PreviewPage onActiveChange={setPreviewActive} />}
         {page === "vault" && (
-          <VaultPage onModifiedChange={(m) => { vaultModifiedRef.current = m; }} />
+          <VaultPage
+            onModifiedChange={(m) => { vaultModifiedRef.current = m; }}
+            onActiveChange={setVaultActive}
+          />
         )}
       </main>
     </div>
