@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RecentVaultEntry } from "../../../utils/recentVaults";
+import { fsaSupported } from "../../../utils/platform";
 import classes from "./VaultRecentList.module.css";
 
 interface Props {
@@ -38,8 +39,9 @@ export const VaultRecentList: React.FC<Props> = ({
 
   const privateEntries = entries.filter((e) => e.type === "private");
   const regularEntries = entries.filter((e) => e.type !== "private");
+  const hasRegular = fsaSupported && regularEntries.length > 0;
 
-  if (privateEntries.length === 0 && regularEntries.length === 0) return null;
+  if (privateEntries.length === 0 && !hasRegular) return null;
 
   return (
     <div className={classes.list}>
@@ -88,7 +90,7 @@ export const VaultRecentList: React.FC<Props> = ({
           ))}
         </>
       )}
-      {regularEntries.length > 0 && (
+      {hasRegular && (
         <>
           <p className={classes.heading}>Recent vaults</p>
           {regularEntries.map((entry) => (

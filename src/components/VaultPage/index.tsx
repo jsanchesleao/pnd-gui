@@ -40,6 +40,8 @@ import {
   type RecentVaultEntry,
 } from "../../utils/recentVaults";
 import { VaultRecentList } from "./VaultRecentList";
+import { fsaSupported, pickFiles } from "../../utils/platform";
+import { downloadBlob } from "../../utils/download";
 
 interface Props {
   onModifiedChange?: (modified: boolean) => void;
@@ -371,14 +373,18 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
 
   async function handleAddFiles() {
     if (!vault || pageState.phase !== "browsing") return;
+    let files: File[];
     try {
-      const handles = await window.showOpenFilePicker({
-        multiple: true,
-      } as Parameters<typeof window.showOpenFilePicker>[0]);
-      const total = handles.length;
-      setAddProgress(0);
-      for (let i = 0; i < handles.length; i++) {
-        const file = await handles[i].getFile();
+      files = await pickFiles();
+    } catch {
+      return; // user cancelled
+    }
+    const total = files.length;
+    if (total === 0) return;
+    setAddProgress(0);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         const bytes = new Uint8Array(await file.arrayBuffer());
         const uuid = await addFileToVault(
           vault,
@@ -537,12 +543,18 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
     const entry = vault.index.entries[uuid];
     if (!entry) return;
     try {
-      const saveHandle = await window.showSaveFilePicker({
-        suggestedName: entry.name,
-      });
-      const writable = await saveHandle.createWritable();
-      await exportVaultFile(vault, uuid, writable);
-      await writable.close();
+      if (fsaSupported) {
+        const saveHandle = await window.showSaveFilePicker({
+          suggestedName: entry.name,
+        });
+        const writable = await saveHandle.createWritable();
+        await exportVaultFile(vault, uuid, writable);
+        await writable.close();
+      } else {
+        const bytes = await decryptVaultFile(vault, uuid);
+        if (!bytes) throw new Error("Decryption returned null");
+        downloadBlob(new Blob([bytes]), entry.name);
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -627,8 +639,8 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange }) => {
           onDeletePrivate={handleDeletePrivateVault}
         />
         <div className={shared.controls}>
-          <button onClick={handleOpenVault}>Open Vault</button>
-          <button onClick={handleCreateVault}>New Vault</button>
+          {fsaSupported && <button onClick={handleOpenVault}>Open Vault</button>}
+          {fsaSupported && <button onClick={handleCreateVault}>New Vault</button>}
           <button onClick={handleCreatePrivateVault}>New Private Vault</button>
         </div>
       </div>

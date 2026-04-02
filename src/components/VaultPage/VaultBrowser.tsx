@@ -4,6 +4,7 @@ import {
   getEntriesInPath,
   type VaultState,
 } from "../../utils/vault";
+import { fsaSupported } from "../../utils/platform";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
 import classes from "./VaultPage.module.css";
@@ -110,29 +111,29 @@ export const VaultBrowser: React.FC<Props> = ({
       </div>
       <div
         className={classes.panels}
-        onDragEnter={(e) => {
-          e.preventDefault();
-          console.log("DRAG ENTER");
-          dragCountRef.current++;
-          setIsDragOver(true);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          console.log("DRAG OVER");
-        }}
-        onDragLeave={() => {
-          console.log("DRAG LEAVE");
-          dragCountRef.current--;
-          if (dragCountRef.current === 0) setIsDragOver(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          console.log("DROPPED");
-          dragCountRef.current = 0;
-          setIsDragOver(false);
-          const files = Array.from(e.dataTransfer.files);
-          if (files.length > 0) onDropFiles(files);
-        }}
+        {...(fsaSupported
+          ? {
+              onDragEnter: (e) => {
+                e.preventDefault();
+                dragCountRef.current++;
+                setIsDragOver(true);
+              },
+              onDragOver: (e) => {
+                e.preventDefault();
+              },
+              onDragLeave: () => {
+                dragCountRef.current--;
+                if (dragCountRef.current === 0) setIsDragOver(false);
+              },
+              onDrop: (e) => {
+                e.preventDefault();
+                dragCountRef.current = 0;
+                setIsDragOver(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length > 0) onDropFiles(files);
+              },
+            }
+          : {})}
         style={{ position: "relative" }}
       >
         <VaultFolderTree
@@ -151,7 +152,7 @@ export const VaultBrowser: React.FC<Props> = ({
           selectedUuids={selectedUuids}
           onSelect={handleSelect}
         />
-        {isDragOver && (
+        {fsaSupported && isDragOver && (
           <div className={classes["drop-overlay"]}>
             <span>Drop files to add to vault</span>
           </div>
