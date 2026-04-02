@@ -59,7 +59,18 @@ export async function getRecentVaults(): Promise<RecentVaultEntry[]> {
     .filter((e) => e.type === "private")
     .sort((a, b) => b.lastOpened - a.lastOpened);
 
-  return [...favorites, ...nonFavorites, ...privates];
+  const opfsRoot = await navigator.storage.getDirectory();
+  const validPrivates: RecentVaultEntry[] = [];
+  for (const entry of privates) {
+    try {
+      const h = await opfsRoot.getDirectoryHandle(entry.name);
+      validPrivates.push({ ...entry, handle: h });
+    } catch {
+      // OPFS directory no longer exists — orphaned entry, skip silently
+    }
+  }
+
+  return [...favorites, ...nonFavorites, ...validPrivates];
 }
 
 export async function addRecentVault(
@@ -178,7 +189,7 @@ export async function createPrivateVaultEntry(
   const record = {
     name: handle.name,
     alias: alias.trim() || handle.name,
-    handle,
+    // handle intentionally not stored — OPFS handles cause DataCloneError in Safari IDB
     lastOpened: Date.now(),
     favorite: false,
     type: "private" as const,
@@ -186,7 +197,7 @@ export async function createPrivateVaultEntry(
   const id = await idbRequest(store.add(record)) as number;
   await txComplete(tx);
   db.close();
-  return { ...record, id };
+  return { ...record, id, handle };
 }
 
 export async function touchRecentVault(id: number): Promise<void> {

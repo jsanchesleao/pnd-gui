@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Download, Eye, Pencil } from "lucide-react";
 import type { ItemProps } from "./VaultFileList.types";
 import { formatSize } from "./VaultFileList.helpers";
 import classes from "./VaultFileList.module.css";
@@ -64,13 +65,13 @@ export const VaultFileItem: React.FC<ItemProps> = ({
           </span>
           <span className={classes["file-item-size"]}>{formatSize(entry.size)}</span>
           <div className={classes["file-item-actions"]} onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => onPreview(uuid)} title="Preview">Preview</button>
-            <button onClick={() => onExport(uuid)} title="Save to disk">Save</button>
+            <button onClick={() => onPreview(uuid)} title="Preview"><Eye size={14} /></button>
+            <button onClick={() => onExport(uuid)} title="Save to disk"><Download size={14} /></button>
             <button
               onClick={() => { setRenameValue(entry.name); setRenaming(true); }}
               title="Rename"
             >
-              Rename
+              <Pencil size={14} />
             </button>
           </div>
         </>

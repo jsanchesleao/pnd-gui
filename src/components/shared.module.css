@@ -72,3 +72,13 @@
         color: var(--clr-error);
     }
 }
+
+@media (max-width: 480px) {
+    .controls {
+        flex-direction: column;
+    }
+
+    .button-group:has(button:nth-child(2)) {
+        grid-template-columns: 1fr;
+    }
+}

@@ -5,6 +5,7 @@ import {
   type VaultState,
 } from "../../utils/vault";
 import { fsaSupported } from "../../utils/platform";
+import { ClipboardPaste, FilePlus2, FolderPlus, PanelLeft, Save, Scissors, Trash2, X } from "lucide-react";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
 import classes from "./VaultPage.module.css";
@@ -51,6 +52,7 @@ export const VaultBrowser: React.FC<Props> = ({
   onDeleteSelected,
 }) => {
   const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
+  const [treeOpen, setTreeOpen] = useState(false);
   const dragCountRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -86,31 +88,55 @@ export const VaultBrowser: React.FC<Props> = ({
   return (
     <div className={classes.browser}>
       <div className={classes.toolbar}>
-        <button onClick={onAddFiles}>+ Add Files</button>
-        <button onClick={onNewFolder}>+ New Folder</button>
-        <button onClick={handleCut} disabled={selectedUuids.size === 0}>
-          Cut{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
-        </button>
-        <button onClick={onPaste} disabled={clipboard.length === 0}>
-          Paste{clipboard.length > 0 ? ` (${clipboard.length})` : ""}
-        </button>
-        <button
-          onClick={handleDeleteSelected}
-          disabled={selectedUuids.size === 0}
-        >
-          Delete{selectedUuids.size > 0 ? ` (${selectedUuids.size})` : ""}
-        </button>
+        <div className={classes["toolbar-actions"]}>
+          <button
+            className={classes["tree-toggle"]}
+            onClick={() => setTreeOpen((o) => !o)}
+            title={treeOpen ? "Hide folders" : "Show folders"}
+          >
+            <PanelLeft size={16} />
+          </button>
+          <button onClick={onAddFiles} title="Add files"><FilePlus2 size={16} /></button>
+          <button onClick={onNewFolder} title="New folder"><FolderPlus size={16} /></button>
+          <button
+            onClick={handleCut}
+            disabled={selectedUuids.size === 0}
+            title={selectedUuids.size > 0 ? `Cut (${selectedUuids.size})` : "Cut"}
+          >
+            <Scissors size={16} />
+            {selectedUuids.size > 0 && <span className={classes["btn-badge"]}>{selectedUuids.size}</span>}
+          </button>
+          <button
+            onClick={onPaste}
+            disabled={clipboard.length === 0}
+            title={clipboard.length > 0 ? `Paste (${clipboard.length})` : "Paste"}
+          >
+            <ClipboardPaste size={16} />
+            {clipboard.length > 0 && <span className={classes["btn-badge"]}>{clipboard.length}</span>}
+          </button>
+          <button
+            onClick={handleDeleteSelected}
+            disabled={selectedUuids.size === 0}
+            title={selectedUuids.size > 0 ? `Delete (${selectedUuids.size})` : "Delete"}
+          >
+            <Trash2 size={16} />
+            {selectedUuids.size > 0 && <span className={classes["btn-badge"]}>{selectedUuids.size}</span>}
+          </button>
+        </div>
         <span className={classes["toolbar-spacer"]} />
-        <span style={{ fontSize: "0.85rem", opacity: 0.7 }}>{breadcrumb}</span>
+        <span className={classes["toolbar-breadcrumb"]}>{breadcrumb}</span>
         <span className={classes["toolbar-spacer"]} />
-        <button onClick={onSave} disabled={!vault.modified}>
-          {vault.modified && <span className={classes["modified-dot"]} />}
-          Save
-        </button>
-        <button onClick={onClose}>Close</button>
+        <div className={classes["toolbar-vault"]}>
+          <button onClick={onSave} disabled={!vault.modified} title="Save vault">
+            {vault.modified && <span className={classes["modified-dot"]} />}
+            <Save size={16} />
+          </button>
+          <button onClick={onClose} title="Close vault"><X size={16} /></button>
+        </div>
       </div>
       <div
         className={classes.panels}
+        data-tree-open={String(treeOpen)}
         {...(fsaSupported
           ? {
               onDragEnter: (e) => {
@@ -136,11 +162,16 @@ export const VaultBrowser: React.FC<Props> = ({
           : {})}
         style={{ position: "relative" }}
       >
-        <VaultFolderTree
-          tree={tree}
-          currentPath={currentPath}
-          onNavigate={onNavigate}
-        />
+        <div
+          className={classes["folder-tree-wrapper"]}
+          data-hidden={String(!treeOpen)}
+        >
+          <VaultFolderTree
+            tree={tree}
+            currentPath={currentPath}
+            onNavigate={onNavigate}
+          />
+        </div>
         <VaultFileList
           entries={entries}
           onPreview={onPreview}
