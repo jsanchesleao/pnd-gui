@@ -58,6 +58,7 @@ button {
     padding: 0.75rem 1rem;
     cursor: pointer;
     background-color: var(--clr-primary);
+    color: var(--color-bg);
     border: none;
     &:hover {
         filter: brightness(115%);
@@ -117,11 +118,17 @@ button {
 .main-wrapper {
     display: grid;
     grid-template-rows: auto 1fr;
-    height: 100svh;
+    height: 100dvh;
+
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
 
     & > main {
         align-self: end;
         height: 100%;
+        grid-row: 2;
     }
 }
 
