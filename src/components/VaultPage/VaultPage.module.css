@@ -22,6 +22,11 @@
   gap: 0.3rem;
 }
 
+.toolbar button[data-active="true"] {
+  color: var(--clr-primary);
+  background: color-mix(in oklch, var(--clr-primary) 12%, transparent);
+}
+
 .btn-badge {
   font-size: 0.7rem;
   font-weight: 600;

@@ -5,9 +5,10 @@ import {
   type VaultState,
 } from "../../utils/vault";
 import { fsaSupported } from "../../utils/platform";
-import { ClipboardPaste, FilePlus2, FolderPlus, PanelLeft, Save, Scissors, Trash2, X } from "lucide-react";
+import { ClipboardPaste, FilePlus2, FolderPlus, Images, PanelLeft, Save, Scissors, Trash2, X } from "lucide-react";
 import { VaultFileList } from "./VaultFileList";
 import { VaultFolderTree } from "./VaultFolderTree";
+import { VaultGalleryView } from "./VaultGalleryView";
 import classes from "./VaultPage.module.css";
 
 interface Props {
@@ -53,11 +54,13 @@ export const VaultBrowser: React.FC<Props> = ({
 }) => {
   const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
   const [treeOpen, setTreeOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const dragCountRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
   useEffect(() => {
     setSelectedUuids(new Set());
+    setGalleryOpen(false);
   }, [currentPath]);
 
   function handleSelect(uuid: string) {
@@ -127,6 +130,13 @@ export const VaultBrowser: React.FC<Props> = ({
         <span className={classes["toolbar-breadcrumb"]}>{breadcrumb}</span>
         <span className={classes["toolbar-spacer"]} />
         <div className={classes["toolbar-vault"]}>
+          <button
+            onClick={() => setGalleryOpen((o) => !o)}
+            data-active={galleryOpen}
+            title={galleryOpen ? "Exit gallery view" : "Gallery view"}
+          >
+            <Images size={16} />
+          </button>
           <button onClick={onSave} disabled={!vault.modified} title="Save vault">
             {vault.modified && <span className={classes["modified-dot"]} />}
             <Save size={16} />
@@ -172,17 +182,29 @@ export const VaultBrowser: React.FC<Props> = ({
             onNavigate={onNavigate}
           />
         </div>
-        <VaultFileList
-          entries={entries}
-          onPreview={onPreview}
-          onExport={onExport}
-          onRename={onRename}
-          onGetThumbnail={onGetThumbnail}
-          thumbnailGenerating={thumbnailGenerating}
-          onEnqueueThumbnail={onEnqueueThumbnail}
-          selectedUuids={selectedUuids}
-          onSelect={handleSelect}
-        />
+        {galleryOpen ? (
+          <VaultGalleryView
+            key={currentPath}
+            entries={entries}
+            thumbnailGenerating={thumbnailGenerating}
+            onGetThumbnail={onGetThumbnail}
+            onEnqueueThumbnail={onEnqueueThumbnail}
+            onPreview={onPreview}
+            onClose={() => setGalleryOpen(false)}
+          />
+        ) : (
+          <VaultFileList
+            entries={entries}
+            onPreview={onPreview}
+            onExport={onExport}
+            onRename={onRename}
+            onGetThumbnail={onGetThumbnail}
+            thumbnailGenerating={thumbnailGenerating}
+            onEnqueueThumbnail={onEnqueueThumbnail}
+            selectedUuids={selectedUuids}
+            onSelect={handleSelect}
+          />
+        )}
         {fsaSupported && isDragOver && (
           <div className={classes["drop-overlay"]}>
             <span>Drop files to add to vault</span>
