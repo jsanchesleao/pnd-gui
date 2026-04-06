@@ -1,0 +1,38 @@
+.idleContent {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--clr-muted, #888);
+    font-size: 0.85rem;
+
+    &::before,
+    &::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: currentColor;
+        opacity: 0.35;
+    }
+}
+
+.urlRow {
+    display: flex;
+    gap: 0.5rem;
+
+    input {
+        flex: 1;
+        padding: 0.5rem 1rem;
+    }
+
+    button {
+        border-radius: 0.5rem;
+        white-space: nowrap;
+    }
+}

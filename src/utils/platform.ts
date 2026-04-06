@@ -1,6 +1,9 @@
 export const fsaSupported =
   typeof window !== "undefined" && "showOpenFilePicker" in window;
 
+export const tauriSupported =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 function promptFileInput(multiple = false): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -19,6 +22,20 @@ export async function pickFile(): Promise<File | null> {
   }
   const files = await promptFileInput();
   return files[0] ?? null;
+}
+
+export async function pickFileWithHandle(): Promise<{
+  file: File;
+  handle: FileSystemFileHandle | null;
+} | null> {
+  if (fsaSupported) {
+    const [handle] = await window.showOpenFilePicker();
+    const file = await handle.getFile();
+    return { file, handle };
+  }
+  const files = await promptFileInput();
+  if (!files[0]) return null;
+  return { file: files[0], handle: null };
 }
 
 export async function pickFiles(): Promise<File[]> {
