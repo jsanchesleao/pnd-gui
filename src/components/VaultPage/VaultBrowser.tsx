@@ -5,7 +5,7 @@ import {
   type VaultState,
 } from "../../utils/vault";
 import { fsaSupported } from "../../utils/platform";
-import { ClipboardPaste, FilePlus2, FolderPlus, Images, PanelLeft, Save, Scissors, Trash2, X } from "lucide-react";
+import { CheckSquare, ClipboardPaste, FilePlus2, FolderPlus, Images, PanelLeft, Save, Scissors, Square, Trash2, X } from "lucide-react";
 import { VaultFileList } from "./VaultFileList";
 import { sortEntries } from "./VaultFileList/VaultFileList.helpers";
 import type { SortMode, SortOrder } from "./VaultFileList/VaultFileList.types";
@@ -91,6 +91,26 @@ export const VaultBrowser: React.FC<Props> = ({
   const tree = buildFolderTree(vault.index);
   const entries = getEntriesInPath(vault.index, currentPath);
   const sortedEntries = sortEntries(entries, sortBy, sortOrder);
+
+  function handleSelectAll() {
+    if (selectedUuids.size === sortedEntries.length && sortedEntries.length > 0) {
+      setSelectedUuids(new Set());
+    } else {
+      setSelectedUuids(new Set(sortedEntries.map((e) => e.uuid)));
+    }
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        handleSelectAll();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
+
   const breadcrumb = currentPath === "" ? "(root)" : currentPath;
 
   return (
@@ -106,6 +126,15 @@ export const VaultBrowser: React.FC<Props> = ({
           </button>
           <button onClick={onAddFiles} title="Add files"><FilePlus2 size={16} /></button>
           <button onClick={onNewFolder} title="New folder"><FolderPlus size={16} /></button>
+          <button
+            onClick={handleSelectAll}
+            disabled={sortedEntries.length === 0}
+            title={selectedUuids.size === sortedEntries.length && sortedEntries.length > 0 ? "Deselect all" : "Select all (Ctrl+A)"}
+          >
+            {selectedUuids.size === sortedEntries.length && sortedEntries.length > 0
+              ? <CheckSquare size={16} />
+              : <Square size={16} />}
+          </button>
           <button
             onClick={handleCut}
             disabled={selectedUuids.size === 0}

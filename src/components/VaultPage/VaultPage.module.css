@@ -1,143 +1,143 @@
 .browser {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  height: 100%;
-  overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+    overflow: hidden;
 }
 
 .toolbar {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--clr-border);
-  flex-wrap: wrap;
-  align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--clr-border);
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 .toolbar button {
-  padding: 0.4rem 0.5rem;
-  font-size: 0.9rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
 }
 
 .toolbar button[data-active="true"] {
-  color: var(--clr-primary);
-  background: color-mix(in oklch, var(--clr-primary) 12%, transparent);
+    color: var(--clr-primary);
+    background: color-mix(in oklch, var(--clr-primary) 12%, transparent);
 }
 
 .btn-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1;
 }
 
 .toolbar-spacer {
-  flex: 1;
+    flex: 1;
 }
 
 .toolbar-actions,
 .toolbar-vault {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .toolbar-breadcrumb {
-  font-size: 0.85rem;
-  opacity: 0.7;
+    font-size: 0.85rem;
+    opacity: 0.7;
 }
 
-.tree-toggle {
-  display: none;
+.toolbar .tree-toggle {
+    display: none;
 }
 
 .folder-tree-wrapper {
-  display: contents;
+    display: contents;
 }
 
 .panels {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  grid-template-rows: 1fr;
-  overflow: hidden;
-  height: 100%;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    height: 100%;
 }
 
 .drop-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 120, 255, 0.1);
-  border: 2px dashed #4a9eff;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 10;
-  font-size: 1.1rem;
-  color: #4a9eff;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 120, 255, 0.1);
+    border: 2px dashed #4a9eff;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+    font-size: 1.1rem;
+    color: #4a9eff;
 }
 
 @media (max-width: 480px) {
-  .toolbar-spacer {
-    display: none;
-  }
+    .toolbar-spacer {
+        display: none;
+    }
 
-  .toolbar-breadcrumb {
-    order: 1;
-  }
+    .toolbar-breadcrumb {
+        order: 1;
+    }
 
-  .toolbar-vault {
-    order: 1;
-    margin-left: auto;
-  }
+    .toolbar-vault {
+        order: 1;
+        margin-left: auto;
+    }
 
-  .toolbar-actions {
-    order: 2;
-    flex-basis: 100%;
-    flex-wrap: wrap;
-  }
+    .toolbar-actions {
+        order: 2;
+        flex-basis: 100%;
+        flex-wrap: wrap;
+    }
 
-  .tree-toggle {
-    display: inline-flex;
-  }
+    .toolbar .tree-toggle {
+        display: inline-flex;
+    }
 
-  .panels[data-tree-open="false"] {
-    grid-template-columns: 1fr;
-  }
+    .panels[data-tree-open="false"] {
+        grid-template-columns: 1fr;
+    }
 
-  .folder-tree-wrapper {
-    display: block;
-    height: 100%;
-    overflow: hidden;
-  }
+    .folder-tree-wrapper {
+        display: block;
+        height: 100%;
+        overflow: hidden;
+    }
 
-  .folder-tree-wrapper[data-hidden="true"] {
-    display: none;
-  }
+    .folder-tree-wrapper[data-hidden="true"] {
+        display: none;
+    }
 }
 
 .add-progress-overlay {
-  position: absolute;
-  inset: 0;
-  background-color: var(--clr-overlay);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  z-index: 10;
-  padding: 2rem;
-  color: var(--clr-on-overlay);
+    position: absolute;
+    inset: 0;
+    background-color: var(--clr-overlay);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    z-index: 10;
+    padding: 2rem;
+    color: var(--clr-on-overlay);
 
-  > p {
-    font-size: 0.95rem;
-    margin: 0;
-  }
+    > p {
+        font-size: 0.95rem;
+        margin: 0;
+    }
 
-  > progress {
-    width: min(320px, 80%);
-  }
+    > progress {
+        width: min(320px, 80%);
+    }
 }
