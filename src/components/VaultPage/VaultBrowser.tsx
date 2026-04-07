@@ -143,7 +143,6 @@ export const VaultBrowser: React.FC<Props> = ({
             <Images size={16} />
           </button>
           <button onClick={onSave} disabled={!vault.modified} title="Save vault">
-            {vault.modified && <span className={classes["modified-dot"]} />}
             <Save size={16} />
           </button>
           <button onClick={onClose} title="Close vault"><X size={16} /></button>
