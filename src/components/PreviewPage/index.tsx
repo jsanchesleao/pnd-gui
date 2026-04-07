@@ -3,6 +3,7 @@ import { VideoPlayerPage } from "../VideoPlayerPage";
 import { ImageViewerPage } from "../ImageViewerPage";
 import { GalleryPage } from "../GalleryPage";
 import { RecentPreviewList } from "./RecentPreviewList";
+import { SaveToVaultOverlay } from "./SaveToVaultOverlay";
 import shared from "../shared.module.css";
 import classes from "./PreviewPage.module.css";
 import type { State } from "./PreviewPage.types";
@@ -28,6 +29,7 @@ interface Props {
 export const PreviewPage: React.FC<Props> = ({ onActiveChange }) => {
   const [state, setState] = useState<State>({ type: "idle" });
   const [urlInput, setUrlInput] = useState("");
+  const [saveToVaultOpen, setSaveToVaultOpen] = useState(false);
   const [entries, setEntries] = useState<RecentPreviewEntry[]>([]);
 
   useEffect(() => {
@@ -209,13 +211,31 @@ export const PreviewPage: React.FC<Props> = ({ onActiveChange }) => {
 
   if (state.type === "viewing") {
     const { file, viewer } = state;
+    let viewerEl: React.ReactNode;
     if (viewer === "video") {
-      return <VideoPlayerPage initialFile={file} onReset={handleReset} />;
+      viewerEl = <VideoPlayerPage initialFile={file} onReset={handleReset} />;
+    } else if (viewer === "image") {
+      viewerEl = <ImageViewerPage initialFile={file} onReset={handleReset} />;
+    } else {
+      viewerEl = <GalleryPage initialFile={file} onReset={handleReset} />;
     }
-    if (viewer === "image") {
-      return <ImageViewerPage initialFile={file} onReset={handleReset} />;
-    }
-    return <GalleryPage initialFile={file} onReset={handleReset} />;
+    return (
+      <div className={classes.viewerWrapper}>
+        {viewerEl}
+        <button
+          className={classes.saveToVaultBtn}
+          onClick={() => setSaveToVaultOpen(true)}
+        >
+          Save to Vault
+        </button>
+        {saveToVaultOpen && (
+          <SaveToVaultOverlay
+            file={file}
+            onClose={() => setSaveToVaultOpen(false)}
+          />
+        )}
+      </div>
+    );
   }
 
   return null;
