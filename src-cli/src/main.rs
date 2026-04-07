@@ -101,30 +101,33 @@ impl EncDecState {
             return;
         }
 
-        let data = match std::fs::read(&path) {
-            Ok(d) => d,
-            Err(e) => { self.status = OpStatus::Failure(format!("Cannot read file: {e}")); return; }
-        };
-
         if self.is_decrypt() {
-            match crypto::decrypt_file(&data, &password) {
-                Some(plain) => {
-                    let out = path.strip_suffix(".lock").unwrap().to_string();
-                    match std::fs::write(&out, &plain) {
-                        Ok(()) => self.status = OpStatus::Success(format!("Saved → {out}")),
-                        Err(e) => self.status = OpStatus::Failure(format!("Write error: {e}")),
-                    }
+            let out = path.strip_suffix(".lock").unwrap().to_string();
+            let result = (|| -> io::Result<bool> {
+                let mut input = std::fs::File::open(&path)?;
+                let mut output = std::fs::File::create(&out)?;
+                crypto::decrypt_file(&mut input, &mut output, &password)
+            })();
+            match result {
+                Ok(true) => self.status = OpStatus::Success(format!("Saved → {out}")),
+                Ok(false) => {
+                    let _ = std::fs::remove_file(&out);
+                    self.status = OpStatus::Failure(
+                        "Decryption failed — wrong password or corrupted file.".into(),
+                    );
                 }
-                None => self.status = OpStatus::Failure(
-                    "Decryption failed — wrong password or corrupted file.".into(),
-                ),
+                Err(e) => self.status = OpStatus::Failure(format!("Error: {e}")),
             }
         } else {
             let out = format!("{path}.lock");
-            let encrypted = crypto::encrypt_file(&data, &password);
-            match std::fs::write(&out, &encrypted) {
+            let result = (|| -> io::Result<()> {
+                let mut input = std::fs::File::open(&path)?;
+                let mut output = std::fs::File::create(&out)?;
+                crypto::encrypt_file(&mut input, &mut output, &password)
+            })();
+            match result {
                 Ok(()) => self.status = OpStatus::Success(format!("Saved → {out}")),
-                Err(e) => self.status = OpStatus::Failure(format!("Write error: {e}")),
+                Err(e) => self.status = OpStatus::Failure(format!("Error: {e}")),
             }
         }
     }
@@ -203,6 +206,7 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    terminal.clear()?;
     let result = run(&mut terminal);
 
     disable_raw_mode()?;

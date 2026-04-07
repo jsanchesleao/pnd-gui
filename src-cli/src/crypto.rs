@@ -1,6 +1,6 @@
 //! Encryption protocol — compatible with pnd-gui.
 //!
-//! Single-file format: fixed 1 MiB frames, each independently encrypted as a
+//! Single-file format: fixed 64 MiB frames, each independently encrypted as a
 //! blob and prefixed with a 4-byte big-endian frame size.
 //!
 //! Blob layout: [0–15] salt | [16–27] IV | [28+] AES-256-GCM ciphertext + tag
@@ -12,11 +12,12 @@ use aes_gcm::{
 use pbkdf2::pbkdf2_hmac;
 use rand::{RngCore, rngs::OsRng};
 use sha2::Sha256;
+use std::io::{self, Read, Write};
 
 const PBKDF2_ITERATIONS: u32 = 100_000;
 const SALT_SIZE: usize = 16;
 const IV_SIZE: usize = 12;
-const FRAME_SIZE: usize = 1024 * 1024; // 1 MiB
+const FRAME_SIZE: usize = 1024 * 1024 * 64; // 64 MiB
 
 // ── Primitives ─────────────────────────────────────────────────────────────
 
@@ -58,53 +59,81 @@ fn decrypt_blob(data: &[u8], password: &str) -> Option<Vec<u8>> {
     cipher.decrypt(nonce, ciphertext).ok()
 }
 
-// ── Public API ─────────────────────────────────────────────────────────────
-
-/// Encrypt `data` with `password` using the pnd-gui single-file format.
-///
-/// Output: concatenation of size-prefixed encrypted frames.
-pub fn encrypt_file(data: &[u8], password: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    // Empty file → one zero-length frame (matches JS behaviour)
-    let frames: Box<dyn Iterator<Item = &[u8]>> = if data.is_empty() {
-        Box::new(std::iter::once(data))
-    } else {
-        Box::new(data.chunks(FRAME_SIZE))
-    };
-
-    for frame in frames {
-        let blob = encrypt_blob(frame, password);
-        let size = (blob.len() as u32).to_be_bytes();
-        out.extend_from_slice(&size);
-        out.extend_from_slice(&blob);
+/// Fill `buf` from `reader`, stopping at EOF. Returns the number of bytes read.
+fn read_frame(reader: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
+    let mut total = 0;
+    while total < buf.len() {
+        match reader.read(&mut buf[total..])? {
+            0 => break,
+            n => total += n,
+        }
     }
-    out
+    Ok(total)
 }
 
-/// Decrypt a pnd-gui single-file `.lock` blob.
+// ── Public API ─────────────────────────────────────────────────────────────
+
+/// Encrypt `input` with `password` using the pnd-gui single-file format.
 ///
-/// Returns `None` if the password is wrong or the data is corrupted.
-pub fn decrypt_file(data: &[u8], password: &str) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    let mut pos = 0;
+/// Writes size-prefixed encrypted frames to `output` one at a time — no full
+/// file is held in memory.
+pub fn encrypt_file(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    password: &str,
+) -> io::Result<()> {
+    let mut buf = vec![0u8; FRAME_SIZE];
+    let mut wrote_any = false;
 
-    while pos < data.len() {
-        if pos + 4 > data.len() {
-            return None; // truncated size prefix
+    loop {
+        let n = read_frame(input, &mut buf)?;
+        if n == 0 {
+            if !wrote_any {
+                // Empty file → one zero-length frame (matches JS behaviour)
+                let blob = encrypt_blob(&[], password);
+                output.write_all(&(blob.len() as u32).to_be_bytes())?;
+                output.write_all(&blob)?;
+            }
+            break;
         }
-        let size =
-            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
-        pos += 4;
-
-        if pos + size > data.len() {
-            return None; // truncated frame body
-        }
-        let blob = &data[pos..pos + size];
-        pos += size;
-
-        let plain = decrypt_blob(blob, password)?;
-        out.extend_from_slice(&plain);
+        let blob = encrypt_blob(&buf[..n], password);
+        output.write_all(&(blob.len() as u32).to_be_bytes())?;
+        output.write_all(&blob)?;
+        wrote_any = true;
     }
 
-    Some(out)
+    Ok(())
+}
+
+/// Decrypt a pnd-gui single-file `.lock` stream.
+///
+/// Returns `Ok(true)` on success, `Ok(false)` if the password is wrong or the
+/// data is corrupted, and `Err` for I/O failures.  Frames are decrypted one at
+/// a time — no full file is held in memory.
+pub fn decrypt_file(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    password: &str,
+) -> io::Result<bool> {
+    let mut size_buf = [0u8; 4];
+
+    loop {
+        match input.read_exact(&mut size_buf) {
+            Ok(()) => {}
+            // Clean EOF at a frame boundary — all frames processed.
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        }
+
+        let size = u32::from_be_bytes(size_buf) as usize;
+        let mut blob = vec![0u8; size];
+        input.read_exact(&mut blob)?;
+
+        match decrypt_blob(&blob, password) {
+            Some(plain) => output.write_all(&plain)?,
+            None => return Ok(false),
+        }
+    }
+
+    Ok(true)
 }

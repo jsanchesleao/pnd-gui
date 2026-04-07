@@ -10,3 +10,17 @@ aes-gcm = "0.10"
 pbkdf2 = "0.12"
 sha2 = "0.10"
 rand = "0.8"
+
+# Compile crypto crates at full optimisation even in debug builds.
+# PBKDF2 + AES-GCM are 10-50x slower without -O3; this costs no debug-ability
+# in the application code.
+[profile.dev.package.aes-gcm]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3

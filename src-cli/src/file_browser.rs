@@ -28,7 +28,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 use std::{
     fs,
@@ -230,6 +230,9 @@ impl FileBrowser {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ))
             .title_alignment(Alignment::Center);
+
+        // Clear every cell in the overlay area first so no background page text bleeds through.
+        frame.render_widget(Clear, area);
 
         let inner = block.inner(area);
         frame.render_widget(block, area);

@@ -1,0 +1,5 @@
+[build]
+# Enable AES-NI, SHA-NI, and CLMUL on the build machine.
+# For a distributable binary targeting any x86-64 CPU made after ~2010, swap
+# this for:  rustflags = ["-C", "target-feature=+aes,+ssse3,+pclmulqdq"]
+rustflags = ["-C", "target-cpu=native"]
