@@ -2,7 +2,16 @@ export const IMAGE_EXTS = new Set([
   "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
 ]);
 
-export const TEXT_EXTS = new Set(["txt", "md"]);
+export const TEXT_EXTS = new Set([
+  // Plain prose / markup
+  "txt", "md",
+  // Data interchange
+  "json", "jsonc", "yaml", "yml", "xml", "xhtml", "csv", "tsv",
+  // Config / settings
+  "toml", "ini", "cfg", "conf", "env", "properties",
+  // Logs
+  "log",
+]);
 
 export const VIDEO_EXTS = new Set(["mp4", "webm", "mkv", "mov", "avi"]);
 
