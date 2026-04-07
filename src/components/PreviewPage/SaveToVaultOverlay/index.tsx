@@ -191,11 +191,11 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
             onSelectedPathChange={(p) => setPhase({ ...phase, selectedPath: p })}
             onFilePasswordChange={(pw) => setPhase({ ...phase, filePassword: pw })}
             onImportModeChange={(m) => setPhase({ ...phase, importMode: m })}
-            onSave={() =>
+            onSave={(effectivePath) =>
               handleSave(
                 phase.vault,
                 phase.entry,
-                phase.selectedPath,
+                effectivePath,
                 phase.filePassword,
                 phase.importMode,
               )
@@ -316,7 +316,7 @@ interface PickFolderPhaseProps {
   onSelectedPathChange: (path: string) => void;
   onFilePasswordChange: (pw: string) => void;
   onImportModeChange: (mode: "zip" | "extracted") => void;
-  onSave: () => void;
+  onSave: (effectivePath: string) => void;
   onBack: () => void;
 }
 
@@ -333,9 +333,17 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
   onSave,
   onBack,
 }) => {
+  const [newSubfolder, setNewSubfolder] = useState("");
+  useEffect(() => setNewSubfolder(""), [selectedPath]);
+
   const tree = buildFolderTree(vault.index);
   const encrypted = isEncrypted(file);
   const gallery = isGallery(file);
+
+  const trimmed = newSubfolder.trim().replace(/\//g, "");
+  const effectivePath = trimmed
+    ? (selectedPath === "" ? trimmed : `${selectedPath}/${trimmed}`)
+    : selectedPath;
 
   return (
     <>
@@ -370,7 +378,7 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
           {importMode === "extracted" ? (
             <p>
               Each file from the archive will be saved into{" "}
-              <strong>{selectedPath === "" ? "(root)" : selectedPath}</strong>
+              <strong>{effectivePath === "" ? "(root)" : effectivePath}</strong>
             </p>
           ) : (
             <>
@@ -378,11 +386,24 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
                 Saving as: <strong>{file.name.replace(/\.lock$/, "")}</strong>
               </p>
               <p>
-                Into: <strong>{selectedPath === "" ? "(root)" : selectedPath}</strong>
+                Into: <strong>{effectivePath === "" ? "(root)" : effectivePath}</strong>
               </p>
             </>
           )}
         </div>
+      </div>
+
+      <div className={classes.field}>
+        <label>New subfolder (optional)</label>
+        <input
+          type="text"
+          placeholder="e.g. summer"
+          value={newSubfolder}
+          onChange={(e) => setNewSubfolder(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !(encrypted && !filePassword)) onSave(effectivePath);
+          }}
+        />
       </div>
 
       {encrypted && (
@@ -393,7 +414,7 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
             value={filePassword}
             onChange={(e) => onFilePasswordChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onSave();
+              if (e.key === "Enter") onSave(effectivePath);
             }}
           />
         </div>
@@ -405,7 +426,7 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
         <button className={classes["btn-secondary"]} onClick={onBack}>
           Back
         </button>
-        <button onClick={onSave} disabled={encrypted && !filePassword}>
+        <button onClick={() => onSave(effectivePath)} disabled={encrypted && !filePassword}>
           Save
         </button>
       </div>
