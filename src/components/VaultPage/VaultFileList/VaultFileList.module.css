@@ -1,253 +1,263 @@
 .file-list {
-  overflow-y: auto;
-  padding: 0.5rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 0.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    container-type: size;
 }
 
 .file-list-sort-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0 0.5rem;
-  font-size: 0.8rem;
-  color: var(--clr-text-muted);
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0 0.5rem;
+    font-size: 0.8rem;
+    color: var(--clr-text-muted);
+    flex-shrink: 0;
 }
 
 .file-list-sort-bar select {
-  font-size: 0.8rem;
-  padding: 0.1rem 0.3rem;
-  background: transparent;
-  color: inherit;
-  border: 1px solid var(--clr-border);
-  border-radius: 3px;
-  cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.1rem 0.3rem;
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--clr-border);
+    border-radius: 3px;
+    cursor: pointer;
 }
 
 .sort-order-btn {
-  font-size: 0.8rem;
-  padding: 0.1rem 0.4rem;
-  background: transparent;
-  color: inherit;
-  border: 1px solid var(--clr-border);
-  border-radius: 3px;
-  cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.1rem 0.4rem;
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--clr-border);
+    border-radius: 3px;
+    cursor: pointer;
 }
 
 .file-list-empty {
-  color: var(--clr-text-muted);
-  font-size: 0.9rem;
-  padding: 1rem 0;
+    color: var(--clr-text-muted);
+    font-size: 0.9rem;
+    padding: 1rem 0;
 }
 
 .file-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: 4px;
-  cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    cursor: default;
 
-  &:hover {
-    background-color: color-mix(in oklch, var(--clr-primary) 8%, transparent);
-  }
+    &:hover {
+        background-color: color-mix(
+            in oklch,
+            var(--clr-primary) 8%,
+            transparent
+        );
+    }
 }
 
 .file-item[data-selected="true"] {
-  background-color: color-mix(in oklch, var(--clr-primary) 18%, transparent);
+    background-color: color-mix(in oklch, var(--clr-primary) 18%, transparent);
 }
 
 .file-item-name {
-  flex: 1;
-  font-size: 0.9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: default;
+    flex: 1;
+    font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
 }
 
 .file-item-rename-input {
-  flex: 1;
-  font-size: 0.9rem;
-  padding: 0.15rem 0.4rem;
-  border: 1px solid var(--clr-primary);
-  background: transparent;
-  color: inherit;
-  border-radius: 3px;
+    flex: 1;
+    font-size: 0.9rem;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--clr-primary);
+    background: transparent;
+    color: inherit;
+    border-radius: 3px;
 }
 
 .file-item-size {
-  font-size: 0.8rem;
-  color: var(--clr-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+    font-size: 0.8rem;
+    color: var(--clr-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .file-item-actions {
-  display: flex;
-  gap: 0.25rem;
-  flex-shrink: 0;
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
 }
 
 .file-item-actions button {
-  padding: 0.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+    padding: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* ── Grid view ─────────────────────────────────────────────────────────── */
 
 .file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 0.75rem;
-  padding: 0.5rem 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.75rem;
+    padding: 0.5rem 0;
 }
 
 .file-grid-item {
-  display: flex;
-  flex-direction: column;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--clr-border-subtle);
-  background: color-mix(in oklch, var(--clr-primary) 2%, transparent);
-  cursor: default;
+    display: flex;
+    flex-direction: column;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--clr-border-subtle);
+    background: color-mix(in oklch, var(--clr-primary) 2%, transparent);
+    cursor: default;
 
-  &:hover {
-    border-color: var(--clr-primary);
-  }
+    &:hover {
+        border-color: var(--clr-primary);
+    }
 }
 
 .file-grid-item[data-selected="true"] {
-  border-color: var(--clr-primary);
-  background: color-mix(in oklch, var(--clr-primary) 10%, transparent);
+    border-color: var(--clr-primary);
+    background: color-mix(in oklch, var(--clr-primary) 10%, transparent);
 }
 
 .file-grid-thumb {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--clr-surface-inset);
-  cursor: default;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--clr-surface-inset);
+    cursor: default;
 }
 
-
 .file-grid-thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .file-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: var(--clr-on-overlay);
-  letter-spacing: 0.06em;
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--clr-on-overlay);
+    letter-spacing: 0.06em;
 }
 
 .file-icon-placeholder {
-  width: 60px;
-  height: 60px;
-  border-radius: 8px;
-  background: var(--clr-border-subtle);
-  animation: thumb-pulse 1.5s ease-in-out infinite;
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    background: var(--clr-border-subtle);
+    animation: thumb-pulse 1.5s ease-in-out infinite;
 }
 
 .file-icon-generating {
-  animation: thumb-pulse 1.5s ease-in-out infinite;
+    animation: thumb-pulse 1.5s ease-in-out infinite;
 }
 
 @keyframes thumb-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
 }
 
 .file-grid-actions {
-  position: absolute;
-  inset: 0;
-  background: var(--clr-overlay);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0.2rem;
-  padding: 0.35rem;
-  opacity: 0;
-  transition: opacity 0.12s;
+    position: absolute;
+    inset: 0;
+    background: var(--clr-overlay);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.35rem;
+    opacity: 0;
+    transition: opacity 0.12s;
 }
 
 .file-grid-item:hover .file-grid-actions {
-  opacity: 1;
+    opacity: 1;
 }
 
 .file-grid-actions button {
-  padding: 0.3rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+    padding: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .file-grid-bottom {
-  padding: 0.35rem 0.45rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-height: 2.6rem;
+    padding: 0.35rem 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-height: 2.6rem;
 }
 
 .file-grid-name {
-  font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.25;
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.25;
 }
 
 .file-grid-size {
-  font-size: 0.65rem;
-  color: var(--clr-text-muted);
+    font-size: 0.65rem;
+    color: var(--clr-text-muted);
 }
 
 .file-grid-rename-input {
-  width: 100%;
-  font-size: 0.75rem;
-  padding: 0.1rem 0.25rem;
-  border: 1px solid var(--clr-primary);
-  background: transparent;
-  color: inherit;
-  border-radius: 3px;
-  box-sizing: border-box;
+    width: 100%;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.25rem;
+    border: 1px solid var(--clr-primary);
+    background: transparent;
+    color: inherit;
+    border-radius: 3px;
+    box-sizing: border-box;
 }
 
 /* View mode toggle buttons in sort bar */
 .view-toggle {
-  display: flex;
-  gap: 0.2rem;
-  margin-left: auto;
+    display: flex;
+    gap: 0.2rem;
+    margin-left: auto;
 }
 
 .view-toggle button {
-  padding: 0.2rem 0.35rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
+    padding: 0.2rem 0.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
 }
 
 .view-toggle button[data-active="true"] {
-  background: color-mix(in oklch, var(--clr-primary) 25%, transparent);
-  border-color: var(--clr-primary);
+    background: color-mix(in oklch, var(--clr-primary) 25%, transparent);
+    border-color: var(--clr-primary);
 }

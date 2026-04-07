@@ -1,6 +1,7 @@
 .folder-tree {
   border-right: 1px solid var(--clr-border);
   overflow-y: auto;
+  min-height: 0;
   padding: 0.5rem 0;
 }
 

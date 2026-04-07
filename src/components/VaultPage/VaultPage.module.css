@@ -69,6 +69,7 @@
 .panels {
   display: grid;
   grid-template-columns: 220px 1fr;
+  grid-template-rows: 1fr;
   overflow: hidden;
   height: 100%;
 }
