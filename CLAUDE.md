@@ -37,6 +37,8 @@ There is no separate linter — `tsc` (run as part of `npm run build`) enforces 
 - **`mediaTypes.ts`** — Maps extensions to `FileCategory` (`image | video | audio | document | archive | code | other`) used throughout the UI.
 - **`videoThumbnail.ts`** — Seeks a video blob to 2 s, captures a canvas frame, exports as WebP.
 - **`recentVaults.ts`** — Persists recently opened vaults in IndexedDB (`pnd-recent-vaults`). Each `RecentVaultEntry` stores the directory handle, a last-opened timestamp, a favorite flag, an optional user-defined `alias` (display name only — never written to vault files), and an optional `type` (`"regular" | "private"`). Non-favorite regular entries are capped at 5; favorites and private entries are unlimited. Private vaults are registered once via `createPrivateVaultEntry` and deleted via `deletePrivateVaultEntry`; they are listed separately at the bottom of `VaultRecentList`.
+- **`recentPreviews.ts`** — Persists recently previewed files in IndexedDB (`pnd-recent-previews`). Each `RecentPreviewEntry` stores either a `FileSystemFileHandle` (local) or a URL string (remote), an optional `alias`, and a `lastOpened` timestamp. Capped at 10 entries.
+- **`textThumbnail.ts`** — Renders the first few lines of a text string onto a canvas and exports as WebP. Used to generate thumbnails for `.txt` and `.md` vault entries.
 - **`platform.ts`** — Runtime compatibility detection. Exports `fsaSupported` (boolean, evaluated once at module load) and two file-picker helpers: `pickFile()` (single file) and `pickFiles()` (multi-select). Both use `showOpenFilePicker` when `fsaSupported` is true, otherwise fall back to a programmatic `<input type="file">` click.
 - **`download.ts`** — Browser-download helpers. `downloadBlob(blob, filename)` creates an object URL, clicks an `<a download>` element, and revokes the URL. `collectAndDownload(stream, filename, signal)` collects a `ReadableStream` into a `Blob` then calls `downloadBlob`; used by `GenericPage` for the compat-mode save path.
 
@@ -45,11 +47,15 @@ There is no separate linter — `tsc` (run as part of `npm run build`) enforces 
 Each component lives in its own folder. Complex components are further split into sibling files (see **Folder conventions** below).
 
 - **`GenericPage/`** — Encrypt/Decrypt tab. Auto-detects mode from the file extension (`.lock` → decrypt, otherwise encrypt). Streams through `createEncryptedStream`/`createDecryptedStream` with progress tracking and mid-operation cancellation via `AbortController`.
-- **`PreviewPage/`** — Detects file type (strips `.lock` suffix) then delegates to `ImageViewerPage`, `VideoPlayerPage`, or `GalleryPage` (ZIP decompressed with fflate).
+- **`PreviewPage/`** — Detects file type (strips `.lock` suffix) then delegates to `ImageViewerPage`, `VideoPlayerPage`, `GalleryPage` (ZIP), or `TextViewerPage` (text/code/markdown). Also contains:
+  - `RecentPreviewList/` — Lists recently previewed files from `recentPreviews.ts`; supports inline rename (alias) and remove.
+  - `SaveToVaultOverlay/` — Overlay that lets users save the currently-previewed file directly into a recent vault, with folder selection via `VaultFolderTree`.
 - **`ImageViewerPage/`** — Decrypts a single image file to memory and displays it.
 - **`VideoPlayerPage/`** — Same pattern as ImageViewerPage but renders a `<video>` element.
 - **`GalleryPage/`** — Decrypts a ZIP archive and shows a keyboard-navigable image carousel.
-- **`DecryptingProgress/`** and **`DecryptError/`** — Shared UI components used by all three preview pages. `DecryptingProgress` takes `{ filename, progress: number }` and renders a progress bar; `DecryptError` takes `{ message, onTryAgain, onChangeFile }`.
+- **`TextViewerPage/`** — Decrypts a text, code, or markdown file to memory and displays it. Has a `formatted` toggle that renders `.md` files via `MarkdownView`.
+- **`MarkdownView.tsx`** — Shared component that renders markdown via `marked` using `dangerouslySetInnerHTML`. Used in `TextViewerPage` and `VaultPreviewPanel/VaultTextEditor`.
+- **`DecryptingProgress/`** and **`DecryptError/`** — Shared UI components used by all preview pages. `DecryptingProgress` takes `{ filename, progress: number }` and renders a progress bar; `DecryptError` takes `{ message, onTryAgain, onChangeFile }`.
 - **`VaultPage/`** — Most complex area:
   - `index.tsx` — Lifecycle: idle → unlock → browse. Holds `vaultRef` (stable ref to avoid stale closures), manages the serial thumbnail generation queue. Contains `autoSave()` which calls `saveVault` silently (no phase change) — invoked automatically after add, delete, and paste. Cut/paste clipboard (`string[]`) lives here; selection state (`Set<string>`) lives in `VaultBrowser`.
   - `types.ts` — `Phase` discriminated union for the page state machine.
@@ -58,7 +64,8 @@ Each component lives in its own folder. Complex components are further split int
   - `PrivateVaultDeleteDialog.tsx` — Password-verified deletion dialog for private vaults. On confirm, removes the OPFS directory (`opfsRoot.removeEntry`) and then the IndexedDB entry — this is a destructive, irrecoverable operation.
   - `VaultFolderTree/` — Virtual folder hierarchy derived from `entry.path` fields in the vault index.
   - `VaultFileList/` — File list/grid with sort (name/type/size/date × asc/desc) and list/grid view modes. Contains sub-components `FileIcon`, `VaultThumbnail`, `VaultFileItem`, `VaultGridItem`. Items support single-click selection (toggled via `onSelect`); action buttons (Preview, Save, Rename) stop click propagation to avoid accidentally toggling selection. Move and Delete are toolbar-only operations.
-  - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand.
+  - `VaultGalleryView/` — Full-screen gallery overlay showing image/video thumbnails for all vault entries in the current path; used as an alternative browse mode.
+  - `VaultPreviewPanel/` — Full-screen overlay that decrypts a vault entry on demand. Contains `VaultTextEditor.tsx` for in-place editing of text/markdown files (with save-back to vault).
 
 ### Data flow summary
 
@@ -77,7 +84,7 @@ Each component lives in its own folder. Complex components are further split int
 - **State machines:** Use union types for phase/state (e.g., `"idle" | "processing" | "done" | "error"`), not boolean flags.
 - **Refs for callbacks:** In VaultPage, callbacks passed to child components are stored in refs to avoid stale closures in `useCallback` dependencies.
 - **Shared CSS classes:** `components/shared.module.css` defines `.container`, `.controls`, `.button-group`, `.progress`, and `.text`. Color variants on `.text` use the `data-text-type="success" | "failure"` attribute rather than separate classes.
-- **Tech debt tracking:** Known refactoring targets are documented in `docs/tech_debts.md`.
+- **Tech debt tracking:** Known refactoring targets are documented in `docs/tech_debts.md`. Remote vault (Google Drive) feasibility and implementation roadmap are in `docs/remote_vaults_plan.md`.
 
 ### PWA and deployment
 
