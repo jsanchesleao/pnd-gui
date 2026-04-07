@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Viewer } from "./PreviewPage.types";
 import { IMAGE_EXTS, VIDEO_EXTS } from "./PreviewPage.constants";
+import { TEXT_EXTS } from "../../utils/mediaTypes";
 
 export function detectViewer(filename: string): Viewer | null {
   const base = filename.endsWith(".lock") ? filename.slice(0, -5) : filename;
@@ -8,6 +9,7 @@ export function detectViewer(filename: string): Viewer | null {
   if (ext === "zip") return "gallery";
   if (VIDEO_EXTS.has(ext)) return "video";
   if (IMAGE_EXTS.has(ext)) return "image";
+  if (TEXT_EXTS.has(ext)) return "text";
   return null;
 }
 

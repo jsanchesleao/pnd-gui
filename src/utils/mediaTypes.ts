@@ -2,6 +2,8 @@ export const IMAGE_EXTS = new Set([
   "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "svg",
 ]);
 
+export const TEXT_EXTS = new Set(["txt", "md"]);
+
 export const VIDEO_EXTS = new Set(["mp4", "webm", "mkv", "mov", "avi"]);
 
 const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "flac", "aac", "m4a", "opus"]);
@@ -42,6 +44,10 @@ export function getMediaType(filename: string): "image" | "video" | "other" {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (VIDEO_EXTS.has(ext)) return "video";
   return "other";
+}
+
+export function isTextFile(filename: string): boolean {
+  return TEXT_EXTS.has(getExt(filename));
 }
 
 export function getMimeType(filename: string): string {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFileCategory } from "../../../utils/mediaTypes";
+import { getFileCategory, isTextFile } from "../../../utils/mediaTypes";
 import { FileIcon } from "./FileIcon";
 import classes from "./VaultFileList.module.css";
 
@@ -11,10 +11,11 @@ export const VaultThumbnail: React.FC<{
   onEnqueueThumbnail: (uuid: string) => void;
 }> = ({ uuid, filename, isGenerating, onGetThumbnail, onEnqueueThumbnail }) => {
   const category = getFileCategory(filename);
+  const hasThumb = category === "image" || category === "video" || isTextFile(filename);
   const [imgUrl, setImgUrl] = useState<string | null | "loading">("loading");
 
   useEffect(() => {
-    if (category !== "image" && category !== "video") return;
+    if (!hasThumb) return;
     let active = true;
     setImgUrl("loading");
     onGetThumbnail(uuid).then((url) => {
@@ -25,16 +26,16 @@ export const VaultThumbnail: React.FC<{
         setImgUrl(null);
         // Request generation only when idle — the effect will re-run when
         // isGenerating transitions back to false after the thumbnail is saved.
-        if (category === "video" && !isGenerating) {
+        if ((category === "video" || isTextFile(filename)) && !isGenerating) {
           onEnqueueThumbnail(uuid);
         }
       }
     });
     return () => { active = false; };
-  }, [uuid, category, onGetThumbnail, isGenerating, onEnqueueThumbnail]);
+  }, [uuid, filename, category, hasThumb, onGetThumbnail, isGenerating, onEnqueueThumbnail]);
 
-  // Non-media files always show a static badge
-  if (category !== "image" && category !== "video") {
+  // Non-thumbnail files always show a static badge
+  if (!hasThumb) {
     return <FileIcon category={category} />;
   }
   // While fetching / decrypting, show a gray pulsing placeholder

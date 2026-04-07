@@ -30,3 +30,23 @@
   color: var(--clr-on-overlay);
   font-size: 1rem;
 }
+
+.text-editor {
+  width: min(90%, 800px);
+  height: 60vh;
+  font-family: monospace;
+  font-size: 0.9rem;
+  resize: vertical;
+  background: var(--clr-surface, #1e1e2e);
+  color: var(--clr-on-surface, #cdd6f4);
+  border: 1px solid var(--clr-border, #45475a);
+  border-radius: 4px;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+
+.text-editor-name {
+  color: var(--clr-on-overlay);
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}

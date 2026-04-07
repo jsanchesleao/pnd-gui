@@ -1,4 +1,4 @@
-export type Viewer = "video" | "image" | "gallery";
+export type Viewer = "video" | "image" | "gallery" | "text";
 
 export type State =
   | { type: "idle"; error?: string }

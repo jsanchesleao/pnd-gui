@@ -145,6 +145,38 @@ export async function addFileToVault(
   return entryUuid;
 }
 
+export async function replaceFileContent(
+  vault: VaultState,
+  uuid: string,
+  newBytes: Uint8Array,
+): Promise<void> {
+  const entry = vault.index.entries[uuid];
+  if (!entry) throw new VaultError("NOT_FOUND", `Entry ${uuid} not found`);
+
+  // Delete old part files
+  for (const part of entry.parts) {
+    try { await vault.blobsDirHandle.removeEntry(part.uuid); } catch { /* already gone */ }
+  }
+
+  // Re-encrypt new content with fresh keys
+  const newParts: VaultIndexPart[] = [];
+  for (let offset = 0; offset < newBytes.length || offset === 0; offset += PART_SIZE) {
+    const chunk = newBytes.subarray(offset, offset + PART_SIZE);
+    const key = await generateFileKey();
+    const encryptedBlob = await encryptBytesWithKey(chunk, key);
+    const encryptedBytes = new Uint8Array(await encryptedBlob.arrayBuffer());
+    const keyBase64 = await exportKeyToBase64(key);
+    const partUuid = crypto.randomUUID();
+    await writeToHandle(vault.blobsDirHandle, partUuid, encryptedBytes);
+    newParts.push({ uuid: partUuid, keyBase64 });
+    if (offset === 0 && newBytes.length === 0) break;
+  }
+
+  entry.parts = newParts;
+  entry.size = newBytes.length;
+  vault.modified = true;
+}
+
 export async function removeFileFromVault(vault: VaultState, uuid: string): Promise<void> {
   const entry = vault.index.entries[uuid];
   if (!entry) {

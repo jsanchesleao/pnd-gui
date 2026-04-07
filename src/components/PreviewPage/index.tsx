@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { VideoPlayerPage } from "../VideoPlayerPage";
 import { ImageViewerPage } from "../ImageViewerPage";
 import { GalleryPage } from "../GalleryPage";
+import { TextViewerPage } from "../TextViewerPage";
 import { RecentPreviewList } from "./RecentPreviewList";
 import { SaveToVaultOverlay } from "./SaveToVaultOverlay";
 import shared from "../shared.module.css";
@@ -216,6 +217,8 @@ export const PreviewPage: React.FC<Props> = ({ onActiveChange }) => {
       viewerEl = <VideoPlayerPage initialFile={file} onReset={handleReset} />;
     } else if (viewer === "image") {
       viewerEl = <ImageViewerPage initialFile={file} onReset={handleReset} />;
+    } else if (viewer === "text") {
+      viewerEl = <TextViewerPage initialFile={file} onReset={handleReset} />;
     } else {
       viewerEl = <GalleryPage initialFile={file} onReset={handleReset} />;
     }

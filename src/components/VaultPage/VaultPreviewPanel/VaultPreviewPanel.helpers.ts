@@ -1,4 +1,4 @@
-import { getMimeType, getMediaType } from "../../../utils/mediaTypes";
+import { getMimeType, getMediaType, isTextFile } from "../../../utils/mediaTypes";
 import type { PreviewState } from "./VaultPreviewPanel.types";
 
 export function buildPreviewState(
@@ -6,6 +6,10 @@ export function buildPreviewState(
   name: string,
   bytes: Uint8Array,
 ): PreviewState {
+  if (isTextFile(name)) {
+    const text = new TextDecoder().decode(bytes);
+    return { type: "text", uuid, name, text };
+  }
   const mediaType = getMediaType(name);
   if (mediaType === "other") {
     return { type: "unsupported", uuid, name };

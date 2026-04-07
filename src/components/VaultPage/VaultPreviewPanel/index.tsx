@@ -1,5 +1,6 @@
 import type { PreviewState } from "./VaultPreviewPanel.types";
 import classes from "./VaultPreviewPanel.module.css";
+import { VaultTextEditor } from "./VaultTextEditor";
 
 export type { PreviewState } from "./VaultPreviewPanel.types";
 export { buildPreviewState } from "./VaultPreviewPanel.helpers";
@@ -7,9 +8,10 @@ export { buildPreviewState } from "./VaultPreviewPanel.helpers";
 interface Props {
   preview: PreviewState;
   onClose: () => void;
+  onSaveText?: (uuid: string, text: string) => Promise<void>;
 }
 
-export const VaultPreviewPanel: React.FC<Props> = ({ preview, onClose }) => {
+export const VaultPreviewPanel: React.FC<Props> = ({ preview, onClose, onSaveText }) => {
   return (
     <div className={classes["preview-panel"]} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       {preview.type === "loading" && (
@@ -33,6 +35,17 @@ export const VaultPreviewPanel: React.FC<Props> = ({ preview, onClose }) => {
           />
           <button onClick={onClose}>Close</button>
         </>
+      )}
+
+      {preview.type === "text" && (
+        <VaultTextEditor
+          key={preview.uuid}
+          uuid={preview.uuid}
+          name={preview.name}
+          text={preview.text}
+          onClose={onClose}
+          onSave={onSaveText}
+        />
       )}
 
       {preview.type === "unsupported" && (

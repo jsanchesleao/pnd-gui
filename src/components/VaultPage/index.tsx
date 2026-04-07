@@ -13,12 +13,14 @@ import {
   openVault,
   removeFileFromVault,
   renameFileInVault,
+  replaceFileContent,
   saveVault,
   saveVaultThumbnail,
   type VaultState,
 } from "../../utils/vault";
-import { getFileCategory, getMimeType } from "../../utils/mediaTypes";
+import { getFileCategory, getMimeType, isTextFile } from "../../utils/mediaTypes";
 import { generateVideoThumbnail } from "../../utils/videoThumbnail";
+import { generateTextThumbnail } from "../../utils/textThumbnail";
 import { VaultBrowser } from "./VaultBrowser";
 import {
   VaultPreviewPanel,
@@ -106,18 +108,26 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
 
       setThumbnailGenerating((prev) => new Set(prev).add(uuid));
       try {
-        const mime = getMimeType(entry.name);
         let thumbBytes: Uint8Array | null = null;
 
-        const firstPartBytes = await decryptFirstVaultPart(currentVault, uuid);
-        if (firstPartBytes) {
-          thumbBytes = await generateVideoThumbnail(firstPartBytes, mime);
-        }
+        if (isTextFile(entry.name)) {
+          const firstPartBytes = await decryptFirstVaultPart(currentVault, uuid);
+          if (firstPartBytes) {
+            const text = new TextDecoder().decode(firstPartBytes);
+            thumbBytes = await generateTextThumbnail(text);
+          }
+        } else {
+          const mime = getMimeType(entry.name);
+          const firstPartBytes = await decryptFirstVaultPart(currentVault, uuid);
+          if (firstPartBytes) {
+            thumbBytes = await generateVideoThumbnail(firstPartBytes, mime);
+          }
 
-        if (!thumbBytes && entry.parts.length > 1 && fsaSupported) {
-          const fullBytes = await decryptVaultFile(currentVault, uuid);
-          if (fullBytes) {
-            thumbBytes = await generateVideoThumbnail(fullBytes, mime);
+          if (!thumbBytes && entry.parts.length > 1 && fsaSupported) {
+            const fullBytes = await decryptVaultFile(currentVault, uuid);
+            if (fullBytes) {
+              thumbBytes = await generateVideoThumbnail(fullBytes, mime);
+            }
           }
         }
 
@@ -388,7 +398,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
     if (total === 0) return;
     setAddProgress(0);
     try {
-      const videoUuids: string[] = [];
+      const thumbUuids: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -401,15 +411,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
             setAddProgress(Math.round(((i + pct / 100) / total) * 100));
           },
         );
-        if (getFileCategory(file.name) === "video") {
-          videoUuids.push(uuid);
+        if (getFileCategory(file.name) === "video" || isTextFile(file.name)) {
+          thumbUuids.push(uuid);
         }
       }
       setAddProgress(null);
       await autoSave();
-      if (videoUuids.length > 0) {
+      if (thumbUuids.length > 0) {
         await new Promise<void>((r) => setTimeout(r, 0));
-        for (const uuid of videoUuids) enqueueThumbnail(uuid);
+        for (const uuid of thumbUuids) enqueueThumbnail(uuid);
       }
     } catch {
       setAddProgress(null);
@@ -421,7 +431,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
     const total = files.length;
     setAddProgress(0);
     try {
-      const videoUuids: string[] = [];
+      const thumbUuids: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -434,15 +444,15 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
             setAddProgress(Math.round(((i + pct / 100) / total) * 100));
           },
         );
-        if (getFileCategory(file.name) === "video") {
-          videoUuids.push(uuid);
+        if (getFileCategory(file.name) === "video" || isTextFile(file.name)) {
+          thumbUuids.push(uuid);
         }
       }
       setAddProgress(null);
       await autoSave();
-      if (videoUuids.length > 0) {
+      if (thumbUuids.length > 0) {
         await new Promise<void>((r) => setTimeout(r, 0));
-        for (const uuid of videoUuids) enqueueThumbnail(uuid);
+        for (const uuid of thumbUuids) enqueueThumbnail(uuid);
       }
     } catch {
       setAddProgress(null);
@@ -599,7 +609,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
         }
       }
 
-      if (category === "video" && entry.thumbnailUuid) {
+      if ((category === "video" || isTextFile(entry.name)) && entry.thumbnailUuid) {
         try {
           const thumbBytes = await getVaultThumbnail(vault, uuid);
           if (!thumbBytes) return null;
@@ -617,6 +627,27 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
     },
     [vault],
   );
+
+  async function handleSaveText(uuid: string, text: string) {
+    if (!vault) return;
+    const entry = vault.index.entries[uuid];
+    if (!entry) return;
+    const bytes = new TextEncoder().encode(text);
+    await replaceFileContent(vault, uuid, bytes);
+    // Clear stale thumbnail so it gets regenerated
+    if (entry.thumbnailUuid) {
+      try { await vault.blobsDirHandle.removeEntry(entry.thumbnailUuid); } catch { /* already gone */ }
+      entry.thumbnailUuid = undefined;
+      entry.thumbnailKeyBase64 = undefined;
+    }
+    const cachedUrl = thumbnailCacheRef.current.get(uuid);
+    if (cachedUrl) {
+      URL.revokeObjectURL(cachedUrl);
+      thumbnailCacheRef.current.delete(uuid);
+    }
+    await autoSave();
+    enqueueThumbnail(uuid);
+  }
 
   async function handlePreview(uuid: string) {
     if (!vault) return;
@@ -736,7 +767,7 @@ export const VaultPage: React.FC<Props> = ({ onModifiedChange, onActiveChange })
           </div>
         )}
         {preview && (
-          <VaultPreviewPanel preview={preview} onClose={revokePreview} />
+          <VaultPreviewPanel preview={preview} onClose={revokePreview} onSaveText={handleSaveText} />
         )}
       </div>
     );
