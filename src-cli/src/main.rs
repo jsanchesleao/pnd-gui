@@ -123,6 +123,9 @@ impl EncDecState {
                 WorkerMsg::Done(status) => {
                     self.status = status;
                     self.progress_rx = None;
+                    self.path.clear();
+                    self.password.clear();
+                    self.focus = 0;
                     break;
                 }
             }
