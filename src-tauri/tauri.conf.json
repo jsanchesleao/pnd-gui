@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "pnd-gui",
-        "width": 760,
-        "height": 480,
+        "width": 790,
+        "height": 500,
         "resizable": true,
         "maximizable": true,
         "center": true,

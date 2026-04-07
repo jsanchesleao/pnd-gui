@@ -1,5 +1,6 @@
 import { useState } from "react";
 import classes from "./VaultPreviewPanel.module.css";
+import { MarkdownView } from "../../MarkdownView";
 
 interface Props {
   uuid: string;
@@ -12,6 +13,8 @@ interface Props {
 export const VaultTextEditor: React.FC<Props> = ({ uuid, name, text, onClose, onSave }) => {
   const [value, setValue] = useState(text);
   const [saving, setSaving] = useState(false);
+  const [formatted, setFormatted] = useState(false);
+  const isMarkdown = name.toLowerCase().endsWith(".md");
 
   async function handleSave() {
     if (!onSave) return;
@@ -26,14 +29,24 @@ export const VaultTextEditor: React.FC<Props> = ({ uuid, name, text, onClose, on
   return (
     <>
       <p className={classes["text-editor-name"]}>{name}</p>
-      <textarea
-        className={classes["text-editor"]}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        disabled={saving}
-      />
+      {formatted && isMarkdown
+        ? <MarkdownView text={value} maxHeight="60vh" />
+        : (
+          <textarea
+            className={classes["text-editor"]}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={saving}
+          />
+        )
+      }
       <div style={{ display: "flex", gap: "0.5rem" }}>
-        {onSave && (
+        {isMarkdown && (
+          <button onClick={() => setFormatted((f) => !f)} disabled={saving}>
+            {formatted ? "View Raw" : "View Formatted"}
+          </button>
+        )}
+        {onSave && !formatted && (
           <button onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </button>

@@ -7,12 +7,14 @@ import type { Props, State } from "./TextViewerPage.types";
 import { ImageViewerForm } from "../ImageViewerPage/ImageViewerForm";
 import { DecryptingProgress } from "../DecryptingProgress";
 import { DecryptError } from "../DecryptError";
+import { MarkdownView } from "../MarkdownView";
 
 export const TextViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   const [state, setState] = useState<State>(
     initialFile ? { type: "password", file: initialFile } : { type: "idle" },
   );
   const [password, setPassword] = useState("");
+  const [formatted, setFormatted] = useState(false);
 
   async function handleChooseFile() {
     const file = await pickFile();
@@ -71,15 +73,24 @@ export const TextViewerPage: React.FC<Props> = ({ initialFile, onReset }) => {
   }
 
   if (state.type === "viewing") {
+    const isMarkdown = state.file.name.toLowerCase().endsWith(".md");
     return (
       <div className={shared.container}>
         <div className={shared.controls}>
           <span>{state.file.name}</span>
           <div className={shared["button-group"]}>
+            {isMarkdown && (
+              <button onClick={() => setFormatted((f) => !f)}>
+                {formatted ? "View Raw" : "View Formatted"}
+              </button>
+            )}
             <button onClick={onReset ?? handleChooseFile}>Close</button>
           </div>
         </div>
-        <pre className={classes["text-content"]}>{state.textContent}</pre>
+        {formatted && isMarkdown
+          ? <MarkdownView text={state.textContent} />
+          : <pre className={classes["text-content"]}>{state.textContent}</pre>
+        }
       </div>
     );
   }
