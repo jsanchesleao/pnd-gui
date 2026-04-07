@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { unzipSync } from "fflate";
 import classes from "./SaveToVaultOverlay.module.css";
 import type { Phase } from "./SaveToVaultOverlay.types";
 import {
@@ -23,6 +24,11 @@ interface Props {
 }
 
 const isEncrypted = (file: File) => file.name.endsWith(".lock");
+
+function isGallery(file: File): boolean {
+  const base = file.name.endsWith(".lock") ? file.name.slice(0, -5) : file.name;
+  return base.toLowerCase().endsWith(".zip");
+}
 
 export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
   const [phase, setPhase] = useState<Phase>({ phase: "pick-vault" });
@@ -74,6 +80,7 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
         entry,
         selectedPath: "",
         filePassword: "",
+        importMode: "zip",
       });
     } catch (e) {
       const msg =
@@ -91,30 +98,47 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
     entry: RecentVaultEntry,
     selectedPath: string,
     filePassword: string,
+    importMode: "zip" | "extracted",
   ) {
     setPhase({ phase: "saving" });
+
+    const restorePickFolder = (fileError: string) =>
+      setPhase({
+        phase: "pick-folder",
+        vault,
+        entry,
+        selectedPath,
+        filePassword,
+        importMode,
+        fileError,
+      });
+
     try {
       let bytes: Uint8Array;
       if (isEncrypted(file)) {
         try {
           bytes = await decryptFileToBytes(file, filePassword);
         } catch {
-          setPhase({
-            phase: "pick-folder",
-            vault,
-            entry,
-            selectedPath,
-            filePassword,
-            fileError: "Wrong file password.",
-          });
+          restorePickFolder("Wrong file password.");
           return;
         }
       } else {
         bytes = new Uint8Array(await file.arrayBuffer());
       }
 
-      const filename = file.name.replace(/\.lock$/, "");
-      await addFileToVault(vault, bytes, filename, selectedPath);
+      if (importMode === "extracted") {
+        const entries = unzipSync(bytes);
+        for (const [name, entryBytes] of Object.entries(entries)) {
+          // Skip directory entries (zero-length names or trailing slash)
+          const basename = name.split("/").pop();
+          if (!basename) continue;
+          await addFileToVault(vault, entryBytes, basename, selectedPath);
+        }
+      } else {
+        const filename = file.name.replace(/\.lock$/, "");
+        await addFileToVault(vault, bytes, filename, selectedPath);
+      }
+
       await saveVault(vault);
       if (entry.id !== -1) {
         await touchRecentVault(entry.id).catch(() => {});
@@ -122,22 +146,19 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
       setPhase({ phase: "done" });
       setTimeout(onClose, 1500);
     } catch (e) {
-      // Re-open pick-folder with a generic error
-      setPhase({
-        phase: "pick-folder",
-        vault,
-        entry,
-        selectedPath,
-        filePassword,
-        fileError: e instanceof Error ? e.message : String(e),
-      });
+      restorePickFolder(e instanceof Error ? e.message : String(e));
     }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className={classes.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div
+      className={classes.overlay}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className={classes.card}>
         {phase.phase === "pick-vault" && (
           <PickVaultPhase
@@ -163,18 +184,21 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
           <PickFolderPhase
             file={file}
             vault={phase.vault}
-            entry={phase.entry}
             selectedPath={phase.selectedPath}
             filePassword={phase.filePassword}
             fileError={phase.fileError}
-            onSelectedPathChange={(p) =>
-              setPhase({ ...phase, selectedPath: p })
-            }
-            onFilePasswordChange={(pw) =>
-              setPhase({ ...phase, filePassword: pw })
-            }
+            importMode={phase.importMode}
+            onSelectedPathChange={(p) => setPhase({ ...phase, selectedPath: p })}
+            onFilePasswordChange={(pw) => setPhase({ ...phase, filePassword: pw })}
+            onImportModeChange={(m) => setPhase({ ...phase, importMode: m })}
             onSave={() =>
-              handleSave(phase.vault, phase.entry, phase.selectedPath, phase.filePassword)
+              handleSave(
+                phase.vault,
+                phase.entry,
+                phase.selectedPath,
+                phase.filePassword,
+                phase.importMode,
+              )
             }
             onBack={() => {
               setPassword("");
@@ -183,13 +207,9 @@ export const SaveToVaultOverlay: React.FC<Props> = ({ file, onClose }) => {
           />
         )}
 
-        {phase.phase === "saving" && (
-          <p>Saving to vault…</p>
-        )}
+        {phase.phase === "saving" && <p>Saving to vault…</p>}
 
-        {phase.phase === "done" && (
-          <p>Saved!</p>
-        )}
+        {phase.phase === "done" && <p>Saved!</p>}
       </div>
     </div>
   );
@@ -269,7 +289,9 @@ const UnlockPhase: React.FC<UnlockPhaseProps> = ({
         value={password}
         autoFocus
         onChange={(e) => onPasswordChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSubmit();
+        }}
       />
     </div>
     {error && <p className={classes.error}>{error}</p>}
@@ -287,12 +309,13 @@ const UnlockPhase: React.FC<UnlockPhaseProps> = ({
 interface PickFolderPhaseProps {
   file: File;
   vault: Parameters<typeof saveVault>[0];
-  entry: RecentVaultEntry;
   selectedPath: string;
   filePassword: string;
   fileError?: string;
+  importMode: "zip" | "extracted";
   onSelectedPathChange: (path: string) => void;
   onFilePasswordChange: (pw: string) => void;
+  onImportModeChange: (mode: "zip" | "extracted") => void;
   onSave: () => void;
   onBack: () => void;
 }
@@ -303,17 +326,40 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
   selectedPath,
   filePassword,
   fileError,
+  importMode,
   onSelectedPathChange,
   onFilePasswordChange,
+  onImportModeChange,
   onSave,
   onBack,
 }) => {
   const tree = buildFolderTree(vault.index);
   const encrypted = isEncrypted(file);
+  const gallery = isGallery(file);
 
   return (
     <>
       <h2>Choose folder</h2>
+
+      {gallery && (
+        <div className={classes["import-mode"]}>
+          <button
+            className={classes["import-mode-btn"]}
+            data-active={String(importMode === "zip")}
+            onClick={() => onImportModeChange("zip")}
+          >
+            Import as ZIP
+          </button>
+          <button
+            className={classes["import-mode-btn"]}
+            data-active={String(importMode === "extracted")}
+            onClick={() => onImportModeChange("extracted")}
+          >
+            Import extracted files
+          </button>
+        </div>
+      )}
+
       <div className={classes["folder-panel"]}>
         <VaultFolderTree
           tree={tree}
@@ -321,14 +367,24 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
           onNavigate={onSelectedPathChange}
         />
         <div className={classes["folder-detail"]}>
-          <p>
-            Saving as: <strong>{file.name.replace(/\.lock$/, "")}</strong>
-          </p>
-          <p>
-            Into: <strong>{selectedPath === "" ? "(root)" : selectedPath}</strong>
-          </p>
+          {importMode === "extracted" ? (
+            <p>
+              Each file from the archive will be saved into{" "}
+              <strong>{selectedPath === "" ? "(root)" : selectedPath}</strong>
+            </p>
+          ) : (
+            <>
+              <p>
+                Saving as: <strong>{file.name.replace(/\.lock$/, "")}</strong>
+              </p>
+              <p>
+                Into: <strong>{selectedPath === "" ? "(root)" : selectedPath}</strong>
+              </p>
+            </>
+          )}
         </div>
       </div>
+
       {encrypted && (
         <div className={classes.field}>
           <label>File password</label>
@@ -336,11 +392,15 @@ const PickFolderPhase: React.FC<PickFolderPhaseProps> = ({
             type="password"
             value={filePassword}
             onChange={(e) => onFilePasswordChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") onSave(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSave();
+            }}
           />
         </div>
       )}
+
       {fileError && <p className={classes.error}>{fileError}</p>}
+
       <div className={classes.actions}>
         <button className={classes["btn-secondary"]} onClick={onBack}>
           Back

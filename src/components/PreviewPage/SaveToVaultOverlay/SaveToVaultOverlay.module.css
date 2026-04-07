@@ -101,6 +101,34 @@
   margin: 0;
 }
 
+/* ── Import mode toggle ─────────────────────────────────────────────────── */
+
+.import-mode {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.import-mode-btn {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+
+  &:hover {
+    background: color-mix(in oklch, var(--clr-primary) 8%, transparent);
+    filter: none;
+  }
+
+  &[data-active="true"] {
+    background: color-mix(in oklch, var(--clr-primary) 18%, transparent);
+    border-color: var(--clr-primary);
+    color: inherit;
+  }
+}
+
 /* ── Folder picker ──────────────────────────────────────────────────────── */
 
 .folder-panel {

@@ -11,6 +11,7 @@ export type Phase =
       selectedPath: string;
       filePassword: string;
       fileError?: string;
+      importMode: "zip" | "extracted";
     }
   | { phase: "saving" }
   | { phase: "done" };
