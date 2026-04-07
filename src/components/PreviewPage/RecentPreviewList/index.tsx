@@ -38,7 +38,7 @@ export const RecentPreviewList: React.FC<Props> = ({
     setEditingId(null);
   }
 
-  if (entries.length === 0) return null;
+  if (entries.length === 0) return <div></div>;
 
   return (
     <div className={classes.list}>

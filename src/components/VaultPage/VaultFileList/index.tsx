@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { LayoutGrid, List } from "lucide-react";
-import type { Props, SortMode, SortOrder, ViewMode } from "./VaultFileList.types";
-import { sortEntries } from "./VaultFileList.helpers";
+import type { Props, SortMode, ViewMode } from "./VaultFileList.types";
 import { VaultFileItem } from "./VaultFileItem";
 import { VaultGridItem } from "./VaultGridItem";
 import classes from "./VaultFileList.module.css";
@@ -10,6 +9,10 @@ export type { FileEntry } from "./VaultFileList.types";
 
 export const VaultFileList: React.FC<Props> = ({
   entries,
+  sortBy,
+  sortOrder,
+  onSortByChange,
+  onSortOrderChange,
   onPreview,
   onExport,
   onRename,
@@ -19,8 +22,6 @@ export const VaultFileList: React.FC<Props> = ({
   selectedUuids,
   onSelect,
 }) => {
-  const [sortBy, setSortBy] = useState<SortMode>("name");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   if (entries.length === 0) {
@@ -31,8 +32,6 @@ export const VaultFileList: React.FC<Props> = ({
     );
   }
 
-  const sortedEntries = sortEntries(entries, sortBy, sortOrder);
-
   return (
     <div className={classes["file-list"]}>
       <div className={classes["file-list-sort-bar"]}>
@@ -40,7 +39,7 @@ export const VaultFileList: React.FC<Props> = ({
         <select
           id="vault-sort"
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortMode)}
+          onChange={(e) => onSortByChange(e.target.value as SortMode)}
         >
           <option value="name">Name</option>
           <option value="type">Type</option>
@@ -49,7 +48,7 @@ export const VaultFileList: React.FC<Props> = ({
         </select>
         <button
           className={classes["sort-order-btn"]}
-          onClick={() => setSortOrder(o => o === "asc" ? "desc" : "asc")}
+          onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
           title={sortOrder === "asc" ? "Ascending" : "Descending"}
         >
           {sortOrder === "asc" ? "↑" : "↓"}
@@ -72,7 +71,7 @@ export const VaultFileList: React.FC<Props> = ({
         </div>
       </div>
       {viewMode === "list" ? (
-        sortedEntries.map(({ uuid, entry }) => (
+        entries.map(({ uuid, entry }) => (
           <VaultFileItem
             key={uuid}
             uuid={uuid}
@@ -86,7 +85,7 @@ export const VaultFileList: React.FC<Props> = ({
         ))
       ) : (
         <div className={classes["file-grid"]}>
-          {sortedEntries.map(({ uuid, entry }) => (
+          {entries.map(({ uuid, entry }) => (
             <VaultGridItem
               key={uuid}
               uuid={uuid}

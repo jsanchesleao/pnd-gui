@@ -11,6 +11,10 @@ export interface FileEntry {
 
 export interface Props {
   entries: FileEntry[];
+  sortBy: SortMode;
+  sortOrder: SortOrder;
+  onSortByChange: (mode: SortMode) => void;
+  onSortOrderChange: (order: SortOrder) => void;
   onPreview: (uuid: string) => void;
   onExport: (uuid: string) => void;
   onRename: (uuid: string, newName: string) => string | null;

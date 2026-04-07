@@ -7,6 +7,8 @@ import {
 import { fsaSupported } from "../../utils/platform";
 import { ClipboardPaste, FilePlus2, FolderPlus, Images, PanelLeft, Save, Scissors, Trash2, X } from "lucide-react";
 import { VaultFileList } from "./VaultFileList";
+import { sortEntries } from "./VaultFileList/VaultFileList.helpers";
+import type { SortMode, SortOrder } from "./VaultFileList/VaultFileList.types";
 import { VaultFolderTree } from "./VaultFolderTree";
 import { VaultGalleryView } from "./VaultGalleryView";
 import classes from "./VaultPage.module.css";
@@ -55,6 +57,8 @@ export const VaultBrowser: React.FC<Props> = ({
   const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set());
   const [treeOpen, setTreeOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortMode>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const dragCountRef = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -86,6 +90,7 @@ export const VaultBrowser: React.FC<Props> = ({
 
   const tree = buildFolderTree(vault.index);
   const entries = getEntriesInPath(vault.index, currentPath);
+  const sortedEntries = sortEntries(entries, sortBy, sortOrder);
   const breadcrumb = currentPath === "" ? "(root)" : currentPath;
 
   return (
@@ -185,7 +190,7 @@ export const VaultBrowser: React.FC<Props> = ({
         {galleryOpen ? (
           <VaultGalleryView
             key={currentPath}
-            entries={entries}
+            entries={sortedEntries}
             thumbnailGenerating={thumbnailGenerating}
             onGetThumbnail={onGetThumbnail}
             onEnqueueThumbnail={onEnqueueThumbnail}
@@ -194,7 +199,11 @@ export const VaultBrowser: React.FC<Props> = ({
           />
         ) : (
           <VaultFileList
-            entries={entries}
+            entries={sortedEntries}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSortByChange={setSortBy}
+            onSortOrderChange={setSortOrder}
             onPreview={onPreview}
             onExport={onExport}
             onRename={onRename}
