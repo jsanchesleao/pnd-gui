@@ -9,9 +9,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph},
 };
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::PathBuf,
+    sync::mpsc,
+    time::Duration,
+};
 
 mod crypto;
 mod file_browser;
@@ -57,8 +62,14 @@ enum Screen {
 
 // ── Encrypt/Decrypt page ───────────────────────────────────────────────────
 
+enum WorkerMsg {
+    Progress(u8),
+    Done(OpStatus),
+}
+
 enum OpStatus {
     Idle,
+    Running(u8), // 0–100 percent
     Success(String),
     Failure(String),
 }
@@ -69,11 +80,18 @@ struct EncDecState {
     password: String,
     focus: usize,
     status: OpStatus,
+    progress_rx: Option<mpsc::Receiver<WorkerMsg>>,
 }
 
 impl EncDecState {
     fn new() -> Self {
-        Self { path: String::new(), password: String::new(), focus: 0, status: OpStatus::Idle }
+        Self {
+            path: String::new(),
+            password: String::new(),
+            focus: 0,
+            status: OpStatus::Idle,
+            progress_rx: None,
+        }
     }
 
     fn is_decrypt(&self) -> bool {
@@ -88,7 +106,31 @@ impl EncDecState {
         self.focus = (self.focus + 2) % 3;
     }
 
-    fn run(&mut self) {
+    /// Drain any pending messages from the background worker thread.
+    fn poll_progress(&mut self) {
+        if self.progress_rx.is_none() {
+            return;
+        }
+        loop {
+            let msg = match self.progress_rx.as_ref().unwrap().try_recv() {
+                Ok(m) => m,
+                Err(_) => break,
+            };
+            match msg {
+                WorkerMsg::Progress(pct) => {
+                    self.status = OpStatus::Running(pct);
+                }
+                WorkerMsg::Done(status) => {
+                    self.status = status;
+                    self.progress_rx = None;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Spawn a background thread to run the operation. Returns immediately.
+    fn start(&mut self) {
         let path = self.path.trim().to_string();
         let password = self.password.clone();
 
@@ -101,35 +143,57 @@ impl EncDecState {
             return;
         }
 
-        if self.is_decrypt() {
-            let out = path.strip_suffix(".lock").unwrap().to_string();
-            let result = (|| -> io::Result<bool> {
-                let mut input = std::fs::File::open(&path)?;
-                let mut output = std::fs::File::create(&out)?;
-                crypto::decrypt_file(&mut input, &mut output, &password)
-            })();
-            match result {
-                Ok(true) => self.status = OpStatus::Success(format!("Saved → {out}")),
-                Ok(false) => {
-                    let _ = std::fs::remove_file(&out);
-                    self.status = OpStatus::Failure(
-                        "Decryption failed — wrong password or corrupted file.".into(),
-                    );
-                }
-                Err(e) => self.status = OpStatus::Failure(format!("Error: {e}")),
+        let total_bytes = std::fs::metadata(&path)
+            .map(|m| m.len())
+            .unwrap_or(1)
+            .max(1);
+        let is_decrypt = self.is_decrypt();
+
+        let (tx, rx) = mpsc::channel::<WorkerMsg>();
+        self.progress_rx = Some(rx);
+        self.status = OpStatus::Running(0);
+
+        std::thread::spawn(move || {
+            let tx_prog = tx.clone();
+            let mut bytes_done = 0u64;
+            let mut on_progress = move |n: usize| {
+                bytes_done += n as u64;
+                let pct = ((bytes_done * 100) / total_bytes).min(100) as u8;
+                let _ = tx_prog.send(WorkerMsg::Progress(pct));
+            };
+
+            if is_decrypt {
+                let out = path.strip_suffix(".lock").unwrap().to_string();
+                let result = (|| -> io::Result<bool> {
+                    let mut input = std::fs::File::open(&path)?;
+                    let mut output = std::fs::File::create(&out)?;
+                    crypto::decrypt_file(&mut input, &mut output, &password, &mut on_progress)
+                })();
+                let final_status = match result {
+                    Ok(true) => OpStatus::Success(format!("Saved → {out}")),
+                    Ok(false) => {
+                        let _ = std::fs::remove_file(&out);
+                        OpStatus::Failure(
+                            "Decryption failed — wrong password or corrupted file.".into(),
+                        )
+                    }
+                    Err(e) => OpStatus::Failure(format!("Error: {e}")),
+                };
+                let _ = tx.send(WorkerMsg::Done(final_status));
+            } else {
+                let out = format!("{path}.lock");
+                let result = (|| -> io::Result<()> {
+                    let mut input = std::fs::File::open(&path)?;
+                    let mut output = std::fs::File::create(&out)?;
+                    crypto::encrypt_file(&mut input, &mut output, &password, &mut on_progress)
+                })();
+                let final_status = match result {
+                    Ok(()) => OpStatus::Success(format!("Saved → {out}")),
+                    Err(e) => OpStatus::Failure(format!("Error: {e}")),
+                };
+                let _ = tx.send(WorkerMsg::Done(final_status));
             }
-        } else {
-            let out = format!("{path}.lock");
-            let result = (|| -> io::Result<()> {
-                let mut input = std::fs::File::open(&path)?;
-                let mut output = std::fs::File::create(&out)?;
-                crypto::encrypt_file(&mut input, &mut output, &password)
-            })();
-            match result {
-                Ok(()) => self.status = OpStatus::Success(format!("Saved → {out}")),
-                Err(e) => self.status = OpStatus::Failure(format!("Error: {e}")),
-            }
-        }
+        });
     }
 }
 
@@ -220,6 +284,9 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
     let mut app = App::new();
 
     loop {
+        // Drain progress messages from the background worker before each draw.
+        app.enc_dec.poll_progress();
+
         // ── Draw ────────────────────────────────────────────────────────────
         terminal.draw(|frame| {
             // Background page
@@ -235,39 +302,51 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         })?;
 
         // ── Events ──────────────────────────────────────────────────────────
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press { continue; }
+        // While an operation is running, poll with a short timeout so the
+        // progress bar keeps updating even without user input.
+        let running = matches!(app.enc_dec.status, OpStatus::Running(_));
+        let has_event = if running {
+            event::poll(Duration::from_millis(50))?
+        } else {
+            true // block until an event arrives
+        };
 
-            // File browser intercepts all keys while open.
-            if app.file_browser.is_some() {
-                let event = app.file_browser.as_mut().unwrap().handle_key(key.code);
-                let target = app.file_browser.as_ref().unwrap().target;
-                match event {
-                    FileBrowserEvent::Selected(path) => {
-                        app.file_browser = None;
-                        apply_browser_selection(&mut app, target, path);
-                    }
-                    FileBrowserEvent::Cancelled => { app.file_browser = None; }
-                    FileBrowserEvent::Pending => {}
+        if !has_event {
+            continue; // timeout — loop back to poll progress + redraw
+        }
+
+        let Event::Key(key) = event::read()? else { continue };
+        if key.kind != KeyEventKind::Press { continue; }
+
+        // File browser intercepts all keys while open.
+        if app.file_browser.is_some() {
+            let event = app.file_browser.as_mut().unwrap().handle_key(key.code);
+            let target = app.file_browser.as_ref().unwrap().target;
+            match event {
+                FileBrowserEvent::Selected(path) => {
+                    app.file_browser = None;
+                    apply_browser_selection(&mut app, target, path);
                 }
-                continue;
+                FileBrowserEvent::Cancelled => { app.file_browser = None; }
+                FileBrowserEvent::Pending => {}
             }
+            continue;
+        }
 
-            // Normal page routing.
-            match app.screen {
-                Screen::Menu => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Up | KeyCode::Char('k') => app.move_up(),
-                    KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                    KeyCode::Enter => app.enter_page(),
-                    _ => {}
-                },
-                Screen::Page(MenuItem::EncryptDecrypt) => handle_enc_dec(&mut app, key.code),
-                Screen::Page(_) => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => app.back(),
-                    _ => {}
-                },
-            }
+        // Normal page routing.
+        match app.screen {
+            Screen::Menu => match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+                KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+                KeyCode::Enter => app.enter_page(),
+                _ => {}
+            },
+            Screen::Page(MenuItem::EncryptDecrypt) => handle_enc_dec(&mut app, key.code),
+            Screen::Page(_) => match key.code {
+                KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => app.back(),
+                _ => {}
+            },
         }
     }
 }
@@ -290,6 +369,11 @@ fn apply_browser_selection(app: &mut App, target: FileBrowserTarget, path: PathB
 /// Keys that navigate away (Esc, q-on-button, Enter-on-path) are processed
 /// before we borrow `enc_dec`, to avoid overlapping mutable borrows.
 fn handle_enc_dec(app: &mut App, code: KeyCode) {
+    // Block all input while an operation is running.
+    if matches!(app.enc_dec.status, OpStatus::Running(_)) {
+        return;
+    }
+
     match code {
         KeyCode::Esc => { app.screen = Screen::Menu; return; }
         KeyCode::Char('q') if app.enc_dec.focus == 2 => { app.screen = Screen::Menu; return; }
@@ -307,7 +391,7 @@ fn handle_enc_dec(app: &mut App, code: KeyCode) {
         KeyCode::Tab => s.advance_focus(),
         KeyCode::BackTab => s.retreat_focus(),
         KeyCode::Enter => {
-            if s.focus == 2 { s.run(); } else { s.advance_focus(); }
+            if s.focus == 2 { s.start(); } else { s.advance_focus(); }
         }
         KeyCode::Char(c) if s.focus < 2 => {
             if s.focus == 0 {
@@ -422,8 +506,8 @@ fn draw_enc_dec(frame: &mut ratatui::Frame, state: &EncDecState) {
             Constraint::Length(3), // [5]  password input
             Constraint::Length(1), // [6]  blank
             Constraint::Length(1), // [7]  Execute button
-            Constraint::Length(1), // [8]  blank
-            Constraint::Length(1), // [9]  status
+            Constraint::Length(1), // [8]  progress label  /  blank
+            Constraint::Length(1), // [9]  progress gauge  /  status text
             Constraint::Min(0),    // [10] filler
             Constraint::Length(1), // [11] hint
         ])
@@ -478,8 +562,9 @@ fn draw_enc_dec(frame: &mut ratatui::Frame, state: &EncDecState) {
         c[5],
     );
 
-    // [7] Execute button
-    let btn_style = if state.focus == 2 {
+    // [7] Execute button — dimmed while an operation is running
+    let is_running = matches!(state.status, OpStatus::Running(_));
+    let btn_style = if !is_running && state.focus == 2 {
         Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(DIM)
@@ -490,23 +575,54 @@ fn draw_enc_dec(frame: &mut ratatui::Frame, state: &EncDecState) {
         c[7],
     );
 
-    // [9] status
-    let status_line = match &state.status {
-        OpStatus::Idle => Line::from(""),
-        OpStatus::Success(msg) => Line::from(Span::styled(
-            format!("✓  {msg}"), Style::default().fg(SUCCESS),
-        )),
-        OpStatus::Failure(msg) => Line::from(Span::styled(
-            format!("✗  {msg}"), Style::default().fg(FAILURE),
-        )),
-    };
-    frame.render_widget(Paragraph::new(status_line), c[9]);
+    // [8] + [9]: progress bar when running, status text otherwise
+    match &state.status {
+        OpStatus::Running(pct) => {
+            let action = if state.is_decrypt() { "Decrypting" } else { "Encrypting" };
+            // [8] label
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    format!("  {action}…"),
+                    Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+                )),
+                c[8],
+            );
+            // [9] gauge
+            frame.render_widget(
+                Gauge::default()
+                    .gauge_style(Style::default().fg(ACCENT).bg(DIM))
+                    .ratio(*pct as f64 / 100.0)
+                    .label(format!("{pct}%")),
+                c[9],
+            );
+        }
+        other => {
+            // [8] stays blank; [9] shows status
+            let status_line = match other {
+                OpStatus::Idle => Line::from(""),
+                OpStatus::Success(msg) => Line::from(Span::styled(
+                    format!("✓  {msg}"),
+                    Style::default().fg(SUCCESS),
+                )),
+                OpStatus::Failure(msg) => Line::from(Span::styled(
+                    format!("✗  {msg}"),
+                    Style::default().fg(FAILURE),
+                )),
+                OpStatus::Running(_) => unreachable!(),
+            };
+            frame.render_widget(Paragraph::new(status_line), c[9]);
+        }
+    }
 
     // [11] hint (context-sensitive)
-    let hint = match state.focus {
-        0 => "Esc back    Tab next field    Enter browse filesystem",
-        1 => "Esc back    Tab next field    Enter advance",
-        _ => "Esc back    Tab next field    Enter run",
+    let hint = if is_running {
+        "please wait…"
+    } else {
+        match state.focus {
+            0 => "Esc back    Tab next field    Enter browse filesystem",
+            1 => "Esc back    Tab next field    Enter advance",
+            _ => "Esc back    Tab next field    Enter run",
+        }
     };
     frame.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),

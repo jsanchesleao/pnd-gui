@@ -76,11 +76,13 @@ fn read_frame(reader: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
 /// Encrypt `input` with `password` using the pnd-gui single-file format.
 ///
 /// Writes size-prefixed encrypted frames to `output` one at a time — no full
-/// file is held in memory.
+/// file is held in memory.  `on_progress` is called after each frame with the
+/// number of **plaintext** bytes processed in that frame.
 pub fn encrypt_file(
     input: &mut impl Read,
     output: &mut impl Write,
     password: &str,
+    on_progress: &mut impl FnMut(usize),
 ) -> io::Result<()> {
     let mut buf = vec![0u8; FRAME_SIZE];
     let mut wrote_any = false;
@@ -93,12 +95,14 @@ pub fn encrypt_file(
                 let blob = encrypt_blob(&[], password);
                 output.write_all(&(blob.len() as u32).to_be_bytes())?;
                 output.write_all(&blob)?;
+                on_progress(0);
             }
             break;
         }
         let blob = encrypt_blob(&buf[..n], password);
         output.write_all(&(blob.len() as u32).to_be_bytes())?;
         output.write_all(&blob)?;
+        on_progress(n);
         wrote_any = true;
     }
 
@@ -109,11 +113,13 @@ pub fn encrypt_file(
 ///
 /// Returns `Ok(true)` on success, `Ok(false)` if the password is wrong or the
 /// data is corrupted, and `Err` for I/O failures.  Frames are decrypted one at
-/// a time — no full file is held in memory.
+/// a time — no full file is held in memory.  `on_progress` is called after
+/// each frame with the number of **plaintext** bytes produced.
 pub fn decrypt_file(
     input: &mut impl Read,
     output: &mut impl Write,
     password: &str,
+    on_progress: &mut impl FnMut(usize),
 ) -> io::Result<bool> {
     let mut size_buf = [0u8; 4];
 
@@ -130,7 +136,10 @@ pub fn decrypt_file(
         input.read_exact(&mut blob)?;
 
         match decrypt_blob(&blob, password) {
-            Some(plain) => output.write_all(&plain)?,
+            Some(plain) => {
+                on_progress(plain.len());
+                output.write_all(&plain)?;
+            }
             None => return Ok(false),
         }
     }
