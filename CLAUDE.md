@@ -97,7 +97,7 @@ The app is also deployable as a PWA (targeting iOS Safari). The strategy and ful
 
 ## CLI app (`src-cli/`)
 
-A standalone Rust TUI (ratatui + crossterm) that encrypts and decrypts files using the same wire format as the web app.
+A standalone Rust TUI (ratatui + crossterm) that encrypts, decrypts, and previews files using the same wire format as the web app.
 
 ### Commands
 
@@ -112,22 +112,40 @@ cargo build --release  # produce ./target/release/pnd-cli
 
 ### Architecture
 
-Source files mirror the web app's component-per-folder pattern. No external state beyond the filesystem.
+- **`main.rs`** — Application shell: palette constants (`pub(crate) ACCENT/DIM/SUCCESS/FAILURE`), `MenuItem`/`Screen` enums, `App` struct, `draw_menu`, the ratatui event loop, and `apply_browser_selection`. Background crypto threads send progress via `mpsc::channel`. The event loop polls every 50 ms while any worker is running so the progress bar redraws without user input, and blocks on `event::read` otherwise. Entering a page automatically opens the file browser overlay.
+- **`crypto.rs`** — Wire-compatible single-file format: 64 MiB frames, each independently encrypted as `[salt 16 B][IV 12 B][AES-256-GCM ciphertext+tag]`, preceded by a 4-byte big-endian size header. PBKDF2-HMAC-SHA256 (100 k iterations, fresh random salt per frame). Streams one frame at a time — no full file in memory. `on_progress: &mut impl FnMut(usize)` receives plaintext byte counts per frame.
+- **`file_browser.rs`** — Self-contained full-screen overlay. `FileBrowser::open(start_dir, target)` → `fb.draw(frame)` + `fb.handle_key(code)` → `FileBrowserEvent::Selected(PathBuf) | Cancelled | Pending`. Add a new `FileBrowserTarget` variant when a new page needs a file picker.
+- **`pages/widgets.rs`** — Shared drawing primitives: `outer_block(title)`, `input_block(label, focused)`, `tail_fit(s, cols)`. Import via `crate::pages::widgets` from any page submodule.
+- **`pages/enc_dec/`** — Encrypt/Decrypt tab, split across:
+  - `state.rs` — `EncDecState`, `OpStatus`, `WorkerMsg`; `start()` spawns the worker, `poll_progress()` drains the channel.
+  - `draw.rs` — `draw_enc_dec(frame, &EncDecState)`.
+  - `handler.rs` — `handle_enc_dec(&mut App, KeyCode)`.
+- **`pages/preview/`** — Preview tab, split across:
+  - `state.rs` — `PreviewState`, `PreviewPhase`, `PreviewResult`, `WorkerMsg`; decrypts to a `Vec<u8>` in memory, then sets `PreviewPhase::PendingRender`.
+  - `image.rs` — Kitty terminal graphics protocol rendering (`render_kitty`, `transmit_kitty`, `decode_rgba`, `terminal_pixel_size`) and `open_with_xdg` fallback.
+  - `media.rs` — `open_with_mpv`: suspends ratatui, runs mpv blocking, resumes; returns `Ok(false)` when mpv is not on PATH.
+  - `draw.rs` — `draw_preview(frame, &PreviewState)`.
+  - `handler.rs` — `handle_preview(&mut App, KeyCode)`.
+  - `mod.rs` — `render_preview(&mut PreviewState, &mut Terminal)`: dispatches `PendingRender` bytes to the image or media renderer; called from the main event loop before `terminal.draw`.
+- **`pages/vault.rs`** — Stub (coming soon).
 
-- **`main.rs`** — Application shell only: palette constants (`pub(crate) ACCENT/DIM/SUCCESS/FAILURE`), `MenuItem`/`Screen` enums, `App` struct, `draw_menu`, the ratatui event loop, and `apply_browser_selection`. Crypto operations run on a background thread (`std::thread::spawn`); progress flows back to the UI via `mpsc::channel<WorkerMsg>`. The event loop uses `event::poll(50 ms)` while an operation is running so the progress bar redraws without user input, and blocks (`event::read`) otherwise.
-- **`crypto.rs`** — Wire-compatible implementation of the pnd-gui single-file format: 64 MiB frames, each independently encrypted as `[salt 16 B][IV 12 B][AES-256-GCM ciphertext+tag]`, preceded by a 4-byte big-endian size. PBKDF2-HMAC-SHA256 (100 k iterations) is called once per frame (each frame has its own random salt). Both `encrypt_file` and `decrypt_file` accept `impl Read`/`impl Write` and stream one frame at a time — no full file is loaded into memory. An `on_progress: &mut impl FnMut(usize)` callback receives plaintext bytes per frame for progress reporting.
-- **`file_browser.rs`** — Self-contained full-screen overlay widget. `FileBrowser::open(start_dir, target)` → `fb.draw(frame)` + `fb.handle_key(code)` → `FileBrowserEvent::Selected(PathBuf) | Cancelled | Pending`. Extend `FileBrowserTarget` when new pages need a file picker.
-- **`pages/`** — One file per tab, each owning its state, drawing function, and key handler:
-  - `enc_dec.rs` — `EncDecState`, `WorkerMsg`, `OpStatus`; private helpers `outer_block`, `input_block`, `tail_fit`; `draw_enc_dec(frame, &EncDecState)`, `handle_enc_dec(&mut App, KeyCode)`.
-  - `preview.rs` — `draw_preview`, `handle_preview` (coming soon stub).
-  - `vault.rs` — `draw_vault`, `handle_vault` (coming soon stub).
+### Two-phase preview rendering
+
+The Preview page uses a split render model to keep terminal-manipulation code off the draw path:
+
+1. Worker thread decrypts to `Vec<u8>` and sends `PreviewWorkerMsg::DecryptedBytes`.
+2. `poll_progress()` transitions the phase to `PendingRender { bytes, ext }`.
+3. The main event loop detects `PendingRender` and calls `render_preview` **before** `terminal.draw`. This function suspends ratatui, renders (Kitty / mpv), and restores ratatui.
+4. Phase becomes `Done(PreviewResult)`, which `draw_preview` renders as a status line.
 
 ### Wire format compatibility
 
-The CLI's 64 MiB frame size differs from the web's 1 MiB frames, but both formats are compatible: each frame carries its own size prefix and salt, so a file encrypted by either side can be decrypted by the other. The PBKDF2 parameters (100 k iterations, SHA-256, 32-byte key) and blob layout must stay in sync with `src/utils/crypto.ts`.
+The CLI's 64 MiB frame size differs from the web's 1 MiB frames, but both formats are compatible: each frame carries its own size prefix and salt. The PBKDF2 parameters (100 k iterations, SHA-256, 32-byte key) and blob layout must stay in sync with `src/utils/crypto.ts`.
 
 ### UI conventions
 
-- `OpStatus` is a discriminated enum (`Idle | Running(u8) | Success(String) | Failure(String)`); use it, not boolean flags.
-- All input is blocked while `Running`. Navigation shortcuts (Esc, q) are also suppressed until the operation completes.
-- The palette constants (`ACCENT`, `DIM`, `SUCCESS`, `FAILURE`) are `pub(crate)` in `main.rs`; page modules import them via `crate::`. `file_browser.rs` keeps its own local copy to stay self-contained.
+- Use discriminated enums for all page state, not boolean flags. `OpStatus` (`Idle | Running(u8) | Success(String) | Failure(String)`) is the established pattern; `PreviewPhase` follows the same idea with more variants.
+- Focus positions are always `0 = path field, 1 = password field`. Tab and BackTab both call `advance_focus()` which cycles between the two. Enter on the password field triggers the operation immediately; there is no Execute button.
+- All input is blocked while a background operation is running (matched on `Running` / `Decrypting` variants). Esc navigates back at any other time.
+- Palette constants (`ACCENT`, `DIM`, `SUCCESS`, `FAILURE`) are `pub(crate)` in `main.rs`; page submodules import them via `crate::`. `file_browser.rs` keeps a local copy to stay self-contained.
+- `WorkerMsg` / internal channel types are `pub(super)` — visible within the page module but not outside it.
