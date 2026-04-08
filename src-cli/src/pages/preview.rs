@@ -39,19 +39,26 @@ pub(crate) enum PreviewPhase {
     Idle,
     /// Background thread is decrypting; value is 0–100.
     Decrypting(u8),
-    /// Bytes are ready; `render_image` must be called on the main thread before
+    /// Bytes are ready; `render_preview` must be called on the main thread before
     /// the next `terminal.draw`.
     PendingRender { bytes: Vec<u8>, ext: String },
     Done(PreviewResult),
 }
 
 pub(crate) enum PreviewResult {
-    NotAnImage,
+    /// File type is not supported for preview.
+    NotSupported,
     WrongPassword,
     IoError(String),
+    /// Image rendered inline via the Kitty protocol.
     KittyShown,
+    /// Image opened in the system viewer via xdg-open.
     XdgOpened,
     RenderFailed(String),
+    /// Media file played in mpv.
+    MpvOpened,
+    /// mpv was not found; user needs to install it.
+    MpvNotInstalled,
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -177,6 +184,16 @@ impl PreviewState {
 
 fn is_image_ext(ext: &str) -> bool {
     matches!(ext, "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif")
+}
+
+fn is_media_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        // video
+        "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "ts" | "ogv"
+        // audio
+        | "mp3" | "flac" | "wav" | "ogg" | "m4a" | "aac" | "opus" | "wma"
+    )
 }
 
 fn supports_kitty() -> bool {
@@ -324,9 +341,44 @@ fn open_with_xdg(bytes: &[u8], ext: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Play a media file with mpv, suspending ratatui for the duration.
+/// Returns `Ok(true)` if mpv was found and ran, `Ok(false)` if mpv is not installed,
+/// or `Err(...)` for I/O failures writing the temp file.
+fn open_with_mpv(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    bytes: &[u8],
+    ext: &str,
+) -> io::Result<bool> {
+    let mut tmp = Builder::new()
+        .prefix("pnd-preview-")
+        .suffix(&format!(".{ext}"))
+        .tempfile()?;
+
+    tmp.write_all(bytes)?;
+    tmp.flush()?;
+    let (_, path) = tmp.keep().map_err(|e| io::Error::other(e.to_string()))?;
+
+    // Suspend ratatui so mpv can own the terminal.
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    let status = Command::new("mpv").arg(&path).status();
+
+    // Resume ratatui regardless of whether mpv succeeded.
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    terminal.clear()?;
+
+    match status {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+        Ok(_) => Ok(true),
+    }
+}
+
 /// Called from `main.rs` before `terminal.draw` whenever the phase is
-/// `PendingRender`. Moves bytes out, decodes, and dispatches to Kitty or xdg-open.
-pub(crate) fn render_image(
+/// `PendingRender`. Moves bytes out, decodes, and dispatches to Kitty, xdg-open, or mpv.
+pub(crate) fn render_preview(
     state: &mut PreviewState,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) {
@@ -335,28 +387,33 @@ pub(crate) fn render_image(
         other => { state.phase = other; return; }
     };
 
-    if !is_image_ext(&ext) {
-        state.phase = PreviewPhase::Done(PreviewResult::NotAnImage);
-        return;
-    }
-
-    let result = if supports_kitty() {
-        // Decode at the terminal's actual pixel resolution so the image never
-        // overflows the screen and the RGBA buffer stays as small as possible.
-        let (max_w, max_h) = terminal_pixel_size();
-        match decode_rgba(&bytes, &ext, max_w, max_h) {
-            Err(e) => PreviewResult::RenderFailed(e),
-            Ok((rgba, w, h)) => match render_kitty(terminal, &rgba, w, h) {
-                Ok(()) => PreviewResult::KittyShown,
-                Err(e) => PreviewResult::RenderFailed(e.to_string()),
-            },
+    let result = if is_image_ext(&ext) {
+        if supports_kitty() {
+            // Decode at the terminal's actual pixel resolution so the image never
+            // overflows the screen and the RGBA buffer stays as small as possible.
+            let (max_w, max_h) = terminal_pixel_size();
+            match decode_rgba(&bytes, &ext, max_w, max_h) {
+                Err(e) => PreviewResult::RenderFailed(e),
+                Ok((rgba, w, h)) => match render_kitty(terminal, &rgba, w, h) {
+                    Ok(()) => PreviewResult::KittyShown,
+                    Err(e) => PreviewResult::RenderFailed(e.to_string()),
+                },
+            }
+        } else {
+            // xdg-open receives the original bytes; no decode needed.
+            match open_with_xdg(&bytes, &ext) {
+                Ok(()) => PreviewResult::XdgOpened,
+                Err(e) => PreviewResult::RenderFailed(e),
+            }
+        }
+    } else if is_media_ext(&ext) {
+        match open_with_mpv(terminal, &bytes, &ext) {
+            Ok(true) => PreviewResult::MpvOpened,
+            Ok(false) => PreviewResult::MpvNotInstalled,
+            Err(e) => PreviewResult::RenderFailed(e.to_string()),
         }
     } else {
-        // xdg-open receives the original bytes; no decode needed.
-        match open_with_xdg(&bytes, &ext) {
-            Ok(()) => PreviewResult::XdgOpened,
-            Err(e) => PreviewResult::RenderFailed(e),
-        }
+        PreviewResult::NotSupported
     };
 
     state.phase = PreviewPhase::Done(result);
@@ -487,7 +544,7 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
         }
         PreviewPhase::Done(result) => {
             let line = match result {
-                PreviewResult::NotAnImage => Line::from(Span::styled(
+                PreviewResult::NotSupported => Line::from(Span::styled(
                     "✗  Preview not available for this file type",
                     Style::default().fg(FAILURE),
                 )),
@@ -509,6 +566,14 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                 )),
                 PreviewResult::RenderFailed(msg) => Line::from(Span::styled(
                     format!("✗  Render failed: {msg}"),
+                    Style::default().fg(FAILURE),
+                )),
+                PreviewResult::MpvOpened => Line::from(Span::styled(
+                    "✓  Playback finished",
+                    Style::default().fg(SUCCESS),
+                )),
+                PreviewResult::MpvNotInstalled => Line::from(Span::styled(
+                    "✗  mpv not found — install it to preview media files",
                     Style::default().fg(FAILURE),
                 )),
             };

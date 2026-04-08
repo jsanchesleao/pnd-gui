@@ -160,7 +160,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
 
         // Render image on the main thread if decryption just completed.
         if let pages::preview::PreviewPhase::PendingRender { .. } = app.preview.phase {
-            pages::preview::render_image(&mut app.preview, terminal);
+            pages::preview::render_preview(&mut app.preview, terminal);
         }
 
         // ── Draw ────────────────────────────────────────────────────────────
