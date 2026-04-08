@@ -61,6 +61,8 @@ pub enum FileBrowserTarget {
     EncDecPath,
     /// Fill the File path field in the Preview page.
     PreviewPath,
+    /// Pick a vault root directory (fires Selected on Enter for directories too).
+    VaultDir,
 }
 
 // ── Internal entry ─────────────────────────────────────────────────────────
@@ -82,11 +84,24 @@ pub struct FileBrowser {
     list_state: ListState,
     /// Non-fatal error shown in place of the list (e.g. permission denied)
     load_error: Option<String>,
+    /// When true, pressing Enter on a directory fires Selected instead of navigating.
+    select_dirs: bool,
 }
 
 impl FileBrowser {
     /// Create and immediately load `start_dir` (falls back to `std::env::current_dir`).
+    /// Pressing Enter on a file fires `Selected`; directories are navigated into.
     pub fn open(start_dir: Option<&Path>, target: FileBrowserTarget) -> Self {
+        Self::new_inner(start_dir, target, false)
+    }
+
+    /// Like `open`, but pressing Enter on a **directory** fires `Selected` instead
+    /// of navigating into it. Used for vault folder selection.
+    pub fn open_for_dir(start_dir: Option<&Path>, target: FileBrowserTarget) -> Self {
+        Self::new_inner(start_dir, target, true)
+    }
+
+    fn new_inner(start_dir: Option<&Path>, target: FileBrowserTarget, select_dirs: bool) -> Self {
         let cwd = start_dir
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
@@ -97,6 +112,7 @@ impl FileBrowser {
             entries: Vec::new(),
             list_state: ListState::default(),
             load_error: None,
+            select_dirs,
         };
         fb.load();
         fb
@@ -126,6 +142,11 @@ impl FileBrowser {
                 if let Some(idx) = self.list_state.selected() {
                     if let Some(entry) = self.entries.get(idx) {
                         if entry.is_dir {
+                            // In dir-selection mode, Enter on a real dir fires Selected
+                            // (but ".." always navigates up, never selects)
+                            if self.select_dirs && entry.name != ".." {
+                                return FileBrowserEvent::Selected(entry.path.clone());
+                            }
                             let path = entry.path.clone();
                             self.navigate_into(path);
                         } else {

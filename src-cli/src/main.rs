@@ -64,6 +64,7 @@ pub(crate) struct App {
     pub(crate) list_state: ListState,
     pub(crate) enc_dec: pages::enc_dec::EncDecState,
     pub(crate) preview: pages::preview::PreviewState,
+    pub(crate) vault: pages::vault::VaultState,
     /// Active file browser overlay. While `Some`, all key events are routed
     /// to the browser. Set to `None` when the user selects or cancels.
     pub(crate) file_browser: Option<FileBrowser>,
@@ -78,6 +79,7 @@ impl App {
             list_state,
             enc_dec: pages::enc_dec::EncDecState::new(),
             preview: pages::preview::PreviewState::new(),
+            vault: pages::vault::VaultState::new(),
             file_browser: None,
         }
     }
@@ -107,7 +109,10 @@ impl App {
                 self.preview = pages::preview::PreviewState::new();
                 self.file_browser = Some(FileBrowser::open(None, FileBrowserTarget::PreviewPath));
             }
-            _ => {}
+            MenuItem::Vault => {
+                self.vault = pages::vault::VaultState::new();
+                self.file_browser = Some(FileBrowser::open_for_dir(None, FileBrowserTarget::VaultDir));
+            }
         }
         self.screen = Screen::Page(item);
     }
@@ -116,10 +121,16 @@ impl App {
         self.screen = Screen::Menu;
     }
 
-    /// Open the file browser, starting in the directory inferred from `path_hint`.
+    /// Open the file browser for a file, starting in the directory inferred from `path_hint`.
     pub(crate) fn open_file_browser(&mut self, path_hint: &str, target: FileBrowserTarget) {
         let start = infer_start_dir(path_hint);
         self.file_browser = Some(FileBrowser::open(start.as_deref(), target));
+    }
+
+    /// Open the file browser in directory-selection mode.
+    pub(crate) fn open_file_browser_dir(&mut self, path_hint: &str, target: FileBrowserTarget) {
+        let start = infer_start_dir(path_hint);
+        self.file_browser = Some(FileBrowser::open_for_dir(start.as_deref(), target));
     }
 }
 
@@ -157,6 +168,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         // Drain progress messages from the background workers before each draw.
         app.enc_dec.poll_progress();
         app.preview.poll_progress();
+        app.vault.poll_progress();
 
         // Render image on the main thread if decryption just completed.
         if let pages::preview::PreviewPhase::PendingRender { .. } = app.preview.phase {
@@ -171,7 +183,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                     pages::enc_dec::draw_enc_dec(frame, &app.enc_dec)
                 }
                 Screen::Page(MenuItem::Preview) => pages::preview::draw_preview(frame, &app.preview),
-                Screen::Page(MenuItem::Vault) => pages::vault::draw_vault(frame),
+                Screen::Page(MenuItem::Vault) => pages::vault::draw_vault(frame, &app.vault),
             }
             // File browser draws on top when open (full-screen overlay)
             if let Some(ref mut fb) = app.file_browser {
@@ -183,7 +195,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         // While an operation is running, poll with a short timeout so the
         // progress bar keeps updating even without user input.
         let running = matches!(app.enc_dec.status, OpStatus::Running(_))
-            || matches!(app.preview.phase, pages::preview::PreviewPhase::Decrypting(_));
+            || matches!(app.preview.phase, pages::preview::PreviewPhase::Decrypting(_))
+            || app.vault.is_opening();
         let has_event = if running {
             event::poll(Duration::from_millis(50))?
         } else {
@@ -245,6 +258,9 @@ fn apply_browser_selection(app: &mut App, target: FileBrowserTarget, path: PathB
         FileBrowserTarget::PreviewPath => {
             app.preview.path = path.to_string_lossy().into_owned();
             app.preview.focus = 1; // advance to password field
+        }
+        FileBrowserTarget::VaultDir => {
+            app.vault.set_path(path.to_string_lossy().as_ref());
         }
     }
 }
