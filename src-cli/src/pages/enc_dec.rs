@@ -52,11 +52,7 @@ impl EncDecState {
     }
 
     pub(crate) fn advance_focus(&mut self) {
-        self.focus = (self.focus + 1) % 3;
-    }
-
-    pub(crate) fn retreat_focus(&mut self) {
-        self.focus = (self.focus + 2) % 3;
+        self.focus = (self.focus + 1) % 2;
     }
 
     /// Drain any pending messages from the background worker thread.
@@ -199,11 +195,10 @@ pub fn draw_enc_dec(frame: &mut Frame, state: &EncDecState) {
             Constraint::Length(1), // [4]  blank
             Constraint::Length(3), // [5]  password input
             Constraint::Length(1), // [6]  blank
-            Constraint::Length(1), // [7]  Execute button
-            Constraint::Length(1), // [8]  progress label  /  blank
-            Constraint::Length(1), // [9]  progress gauge  /  status text
-            Constraint::Min(0),    // [10] filler
-            Constraint::Length(1), // [11] hint
+            Constraint::Length(1), // [7]  progress label  /  blank
+            Constraint::Length(1), // [8]  progress gauge  /  status text
+            Constraint::Min(0),    // [9]  filler
+            Constraint::Length(1), // [10] hint
         ])
         .split(area);
 
@@ -256,42 +251,28 @@ pub fn draw_enc_dec(frame: &mut Frame, state: &EncDecState) {
         c[5],
     );
 
-    // [7] Execute button — dimmed while an operation is running
+    // [7] + [8]: progress bar when running, status text otherwise
     let is_running = matches!(state.status, OpStatus::Running(_));
-    let btn_style = if !is_running && state.focus == 2 {
-        Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(DIM)
-    };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled("[ Execute ]", btn_style)))
-            .alignment(Alignment::Center),
-        c[7],
-    );
-
-    // [8] + [9]: progress bar when running, status text otherwise
     match &state.status {
         OpStatus::Running(pct) => {
             let action = if state.is_decrypt() { "Decrypting" } else { "Encrypting" };
-            // [8] label
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     format!("  {action}…"),
                     Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
                 )),
-                c[8],
+                c[7],
             );
-            // [9] gauge
             frame.render_widget(
                 Gauge::default()
                     .gauge_style(Style::default().fg(ACCENT).bg(DIM))
                     .ratio(*pct as f64 / 100.0)
                     .label(format!("{pct}%")),
-                c[9],
+                c[8],
             );
         }
         other => {
-            // [8] stays blank; [9] shows status
+            // [7] stays blank; [8] shows status
             let status_line = match other {
                 OpStatus::Idle => Line::from(""),
                 OpStatus::Success(msg) => Line::from(Span::styled(
@@ -304,23 +285,22 @@ pub fn draw_enc_dec(frame: &mut Frame, state: &EncDecState) {
                 )),
                 OpStatus::Running(_) => unreachable!(),
             };
-            frame.render_widget(Paragraph::new(status_line), c[9]);
+            frame.render_widget(Paragraph::new(status_line), c[8]);
         }
     }
 
-    // [11] hint (context-sensitive)
+    // [10] hint (context-sensitive)
     let hint = if is_running {
         "please wait…"
     } else {
         match state.focus {
             0 => "Esc back    Tab next field    Enter browse filesystem",
-            1 => "Esc back    Tab next field    Enter advance",
-            _ => "Esc back    Tab next field    Enter run",
+            _ => "Esc back    Tab previous field    Enter run",
         }
     };
     frame.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
-        c[11],
+        c[10],
     );
 }
 
@@ -338,7 +318,6 @@ pub fn handle_enc_dec(app: &mut App, code: KeyCode) {
 
     match code {
         KeyCode::Esc => { app.screen = Screen::Menu; return; }
-        KeyCode::Char('q') if app.enc_dec.focus == 2 => { app.screen = Screen::Menu; return; }
         // Enter on the path field opens the file browser instead of advancing focus.
         KeyCode::Enter if app.enc_dec.focus == 0 => {
             let hint = app.enc_dec.path.clone();
@@ -350,12 +329,10 @@ pub fn handle_enc_dec(app: &mut App, code: KeyCode) {
 
     let s = &mut app.enc_dec;
     match code {
-        KeyCode::Tab => s.advance_focus(),
-        KeyCode::BackTab => s.retreat_focus(),
-        KeyCode::Enter => {
-            if s.focus == 2 { s.start(); } else { s.advance_focus(); }
-        }
-        KeyCode::Char(c) if s.focus < 2 => {
+        KeyCode::Tab | KeyCode::BackTab => s.advance_focus(),
+        // Enter on the password field runs the operation immediately.
+        KeyCode::Enter if s.focus == 1 => s.start(),
+        KeyCode::Char(c) => {
             if s.focus == 0 {
                 s.path.push(c);
                 s.status = OpStatus::Idle;
@@ -363,7 +340,7 @@ pub fn handle_enc_dec(app: &mut App, code: KeyCode) {
                 s.password.push(c);
             }
         }
-        KeyCode::Backspace if s.focus < 2 => {
+        KeyCode::Backspace => {
             if s.focus == 0 { s.path.pop(); s.status = OpStatus::Idle; }
             else { s.password.pop(); }
         }

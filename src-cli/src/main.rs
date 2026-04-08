@@ -99,8 +99,14 @@ impl App {
     fn enter_page(&mut self) {
         let item = self.selected_item();
         match item {
-            MenuItem::EncryptDecrypt => { self.enc_dec = pages::enc_dec::EncDecState::new(); }
-            MenuItem::Preview => { self.preview = pages::preview::PreviewState::new(); }
+            MenuItem::EncryptDecrypt => {
+                self.enc_dec = pages::enc_dec::EncDecState::new();
+                self.file_browser = Some(FileBrowser::open(None, FileBrowserTarget::EncDecPath));
+            }
+            MenuItem::Preview => {
+                self.preview = pages::preview::PreviewState::new();
+                self.file_browser = Some(FileBrowser::open(None, FileBrowserTarget::PreviewPath));
+            }
             _ => {}
         }
         self.screen = Screen::Page(item);
@@ -212,7 +218,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                 KeyCode::Up | KeyCode::Char('k') => app.move_up(),
                 KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                KeyCode::Enter => app.enter_page(),
+                KeyCode::Enter | KeyCode::Char('l') => app.enter_page(),
                 _ => {}
             },
             Screen::Page(MenuItem::EncryptDecrypt) => {

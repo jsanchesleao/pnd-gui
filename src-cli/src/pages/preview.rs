@@ -12,7 +12,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
 };
@@ -76,8 +76,7 @@ impl PreviewState {
         }
     }
 
-    fn advance_focus(&mut self) { self.focus = (self.focus + 1) % 3; }
-    fn retreat_focus(&mut self) { self.focus = (self.focus + 2) % 3; }
+    fn advance_focus(&mut self) { self.focus = (self.focus + 1) % 2; }
 
     /// Drain pending messages from the background worker.
     pub(crate) fn poll_progress(&mut self) {
@@ -403,18 +402,17 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(1), // [0]  mode label
+            Constraint::Length(1), // [0]  info line
             Constraint::Length(1), // [1]  blank
             Constraint::Length(3), // [2]  path input
             Constraint::Length(1), // [3]  path sub-hint
             Constraint::Length(1), // [4]  blank
             Constraint::Length(3), // [5]  password input
             Constraint::Length(1), // [6]  blank
-            Constraint::Length(1), // [7]  Preview button
-            Constraint::Length(1), // [8]  progress label / blank
-            Constraint::Length(1), // [9]  progress gauge / status text
-            Constraint::Min(0),    // [10] filler
-            Constraint::Length(1), // [11] hint bar
+            Constraint::Length(1), // [7]  progress label / blank
+            Constraint::Length(1), // [8]  progress gauge / status text
+            Constraint::Min(0),    // [9]  filler
+            Constraint::Length(1), // [10] hint bar
         ])
         .split(area);
 
@@ -460,19 +458,7 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
         c[5],
     );
 
-    // [7] Preview button
-    let btn_style = if !is_decrypting && state.focus == 2 {
-        Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(DIM)
-    };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled("[ Preview ]", btn_style)))
-            .alignment(Alignment::Center),
-        c[7],
-    );
-
-    // [8] + [9]: progress bar when decrypting, status text otherwise
+    // [7] + [8]: progress bar when decrypting, status text otherwise
     match &state.phase {
         PreviewPhase::Decrypting(pct) => {
             frame.render_widget(
@@ -480,14 +466,14 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                     "  Decrypting…",
                     Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
                 )),
-                c[8],
+                c[7],
             );
             frame.render_widget(
                 Gauge::default()
                     .gauge_style(Style::default().fg(ACCENT).bg(DIM))
                     .ratio(*pct as f64 / 100.0)
                     .label(format!("{pct}%")),
-                c[9],
+                c[8],
             );
         }
         PreviewPhase::PendingRender { .. } => {
@@ -496,7 +482,7 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                     "  Rendering…",
                     Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
                 )),
-                c[8],
+                c[7],
             );
         }
         PreviewPhase::Done(result) => {
@@ -526,24 +512,23 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                     Style::default().fg(FAILURE),
                 )),
             };
-            frame.render_widget(Paragraph::new(line), c[9]);
+            frame.render_widget(Paragraph::new(line), c[8]);
         }
         PreviewPhase::Idle => {}
     }
 
-    // [11] hint bar
+    // [10] hint bar
     let hint = if is_decrypting {
         "please wait…"
     } else {
         match state.focus {
             0 => "Esc back    Tab next field    Enter browse filesystem",
-            1 => "Esc back    Tab next field    Enter advance",
-            _ => "Esc back    Tab next field    Enter preview",
+            _ => "Esc back    Tab previous field    Enter preview",
         }
     };
     frame.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
-        c[11],
+        c[10],
     );
 }
 
@@ -556,7 +541,7 @@ pub fn handle_preview(app: &mut App, code: KeyCode) {
 
     match code {
         KeyCode::Esc => { app.screen = Screen::Menu; return; }
-        KeyCode::Char('q') if app.preview.focus == 2 => { app.screen = Screen::Menu; return; }
+        // Enter on the path field opens the file browser instead of advancing focus.
         KeyCode::Enter if app.preview.focus == 0 => {
             let hint = app.preview.path.clone();
             app.open_file_browser(&hint, FileBrowserTarget::PreviewPath);
@@ -567,12 +552,10 @@ pub fn handle_preview(app: &mut App, code: KeyCode) {
 
     let s = &mut app.preview;
     match code {
-        KeyCode::Tab => s.advance_focus(),
-        KeyCode::BackTab => s.retreat_focus(),
-        KeyCode::Enter => {
-            if s.focus == 2 { s.start(); } else { s.advance_focus(); }
-        }
-        KeyCode::Char(c) if s.focus < 2 => {
+        KeyCode::Tab | KeyCode::BackTab => s.advance_focus(),
+        // Enter on the password field runs the preview immediately.
+        KeyCode::Enter if s.focus == 1 => s.start(),
+        KeyCode::Char(c) => {
             if s.focus == 0 {
                 s.path.push(c);
                 s.phase = PreviewPhase::Idle;
@@ -580,7 +563,7 @@ pub fn handle_preview(app: &mut App, code: KeyCode) {
                 s.password.push(c);
             }
         }
-        KeyCode::Backspace if s.focus < 2 => {
+        KeyCode::Backspace => {
             if s.focus == 0 { s.path.pop(); s.phase = PreviewPhase::Idle; }
             else { s.password.pop(); }
         }
