@@ -94,3 +94,36 @@ The app is also deployable as a PWA (targeting iOS Safari). The strategy and ful
 - **Base path:** `vite.config.ts` reads `GITHUB_PAGES=true` to switch `base` (and the manifest's `start_url` and icon paths) from `/` to `/pnd-gui/`. Local dev and Tauri builds are unaffected.
 - **Icons:** `public/icons/` holds the four PWA icon sizes. They are derived from `src-tauri/icons/icon.png` (512×512 RGBA source). Regenerate them by running the inline Node.js resize script used during initial setup — it decodes the PNG, does bilinear downscaling, and re-encodes without external dependencies.
 - **CI:** `.github/workflows/deploy.yml` builds with `GITHUB_PAGES=true` and deploys `dist/` to GitHub Pages via `actions/deploy-pages` on every push to `master`. Requires **Settings → Pages → Source → GitHub Actions** enabled in the repo once.
+
+## CLI app (`src-cli/`)
+
+A standalone Rust TUI (ratatui + crossterm) that encrypts and decrypts files using the same wire format as the web app.
+
+### Commands
+
+```bash
+# From src-cli/
+cargo run              # debug build (crypto crates compile at opt-level 3 — see Cargo.toml)
+cargo run --release    # release build with full optimisations + AES-NI (preferred)
+cargo build --release  # produce ./target/release/pnd-cli
+```
+
+`.cargo/config.toml` sets `target-cpu=native` so release builds use AES-NI and SHA-NI. For a portable binary, swap to `target-feature=+aes,+ssse3,+pclmulqdq`.
+
+### Architecture
+
+Three source files; no external state beyond the filesystem:
+
+- **`main.rs`** — Application shell. Contains the ratatui event loop, all page state (`EncDecState`, `OpStatus`), drawing functions, and key-event handlers. Crypto operations run on a background thread (`std::thread::spawn`); progress flows back to the UI via `mpsc::channel<WorkerMsg>`. The event loop uses `event::poll(50 ms)` while an operation is running so the progress bar redraws without user input, and blocks (`event::read`) otherwise.
+- **`crypto.rs`** — Wire-compatible implementation of the pnd-gui single-file format: 64 MiB frames, each independently encrypted as `[salt 16 B][IV 12 B][AES-256-GCM ciphertext+tag]`, preceded by a 4-byte big-endian size. PBKDF2-HMAC-SHA256 (100 k iterations) is called once per frame (each frame has its own random salt). Both `encrypt_file` and `decrypt_file` accept `impl Read`/`impl Write` and stream one frame at a time — no full file is loaded into memory. An `on_progress: &mut impl FnMut(usize)` callback receives plaintext bytes per frame for progress reporting.
+- **`file_browser.rs`** — Self-contained full-screen overlay widget. `FileBrowser::open(start_dir, target)` → `fb.draw(frame)` + `fb.handle_key(code)` → `FileBrowserEvent::Selected(PathBuf) | Cancelled | Pending`. Extend `FileBrowserTarget` when new pages need a file picker.
+
+### Wire format compatibility
+
+The CLI's 64 MiB frame size differs from the web's 1 MiB frames, but both formats are compatible: each frame carries its own size prefix and salt, so a file encrypted by either side can be decrypted by the other. The PBKDF2 parameters (100 k iterations, SHA-256, 32-byte key) and blob layout must stay in sync with `src/utils/crypto.ts`.
+
+### UI conventions
+
+- `OpStatus` is a discriminated enum (`Idle | Running(u8) | Success(String) | Failure(String)`); use it, not boolean flags.
+- All input is blocked while `Running`. Navigation shortcuts (Esc, q) are also suppressed until the operation completes.
+- The palette constants (`ACCENT`, `DIM`, `SUCCESS`, `FAILURE`) are defined at the top of `main.rs`; `file_browser.rs` keeps its own local copy to stay self-contained.
