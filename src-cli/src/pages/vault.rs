@@ -1,3 +1,17 @@
+//! Vault page.
+//!
+//! Sub-modules live in the `vault/` directory alongside this file and are
+//! wired in with `#[path]` so the module tree matches the folder structure
+//! without requiring a full `vault/mod.rs` conversion.
+
+#[path = "vault/types.rs"]
+pub(crate) mod types;
+
+#[path = "vault/crypto.rs"]
+pub(crate) mod crypto;
+
+// ── Stub UI (remaining implementation steps) ──────────────────────────────
+
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
@@ -7,7 +21,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
 };
 
-use crate::{App, DIM, ACCENT};
+use crate::{App, ACCENT, DIM};
 
 pub fn draw_vault(frame: &mut Frame) {
     let area = frame.area();
