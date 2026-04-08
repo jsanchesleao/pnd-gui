@@ -93,7 +93,7 @@ pub(super) fn decode_rgba(
 /// - `f=32` — RGBA pixel format (4 bytes per pixel)
 /// - `s` / `v` — width / height in pixels (first chunk only)
 /// - `m=1` — more chunks follow; `m=0` — this is the last chunk
-fn transmit_kitty(out: &mut impl io::Write, rgba: &[u8], width: u32, height: u32) -> io::Result<()> {
+pub(super) fn transmit_kitty(out: &mut impl io::Write, rgba: &[u8], width: u32, height: u32) -> io::Result<()> {
     const CHUNK: usize = 3072;
     let chunks: Vec<&[u8]> = rgba.chunks(CHUNK).collect();
     let total = chunks.len();

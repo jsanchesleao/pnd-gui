@@ -40,6 +40,12 @@ pub(crate) enum PreviewResult {
     MpvOpened,
     /// mpv was not found on PATH; user needs to install it.
     MpvNotInstalled,
+    /// ZIP image gallery browsed inline via the Kitty protocol. Carries the image count.
+    GalleryShown(usize),
+    /// ZIP gallery opened with xdg-open (non-Kitty terminal).
+    GalleryXdgOpened,
+    /// Text file previewed (bat or ratatui viewer). Carries the line count (0 when bat was used).
+    TextShown(usize),
 }
 
 // ── Page state ─────────────────────────────────────────────────────────────

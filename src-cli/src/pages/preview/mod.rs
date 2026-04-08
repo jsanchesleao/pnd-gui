@@ -1,8 +1,10 @@
 mod draw;
+mod gallery;
 mod handler;
 mod image;
 mod media;
 mod state;
+mod text;
 
 pub(crate) use state::{PreviewPhase, PreviewResult, PreviewState};
 pub use draw::draw_preview;
@@ -48,6 +50,15 @@ pub(crate) fn render_preview(
             Ok(false) => PreviewResult::MpvNotInstalled,
             Err(e)    => PreviewResult::RenderFailed(e.to_string()),
         }
+    } else if ext == "zip" {
+        match gallery::show_gallery(terminal, &bytes) {
+            Ok(gallery::GalleryOutcome::Shown(n))  => PreviewResult::GalleryShown(n),
+            Ok(gallery::GalleryOutcome::XdgOpened) => PreviewResult::GalleryXdgOpened,
+            Ok(gallery::GalleryOutcome::NoImages)   => PreviewResult::NotSupported,
+            Err(e) => PreviewResult::RenderFailed(e.to_string()),
+        }
+    } else if text::is_text_ext(&ext) {
+        text::show_text(&bytes, &ext, terminal)
     } else {
         PreviewResult::NotSupported
     };

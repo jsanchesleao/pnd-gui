@@ -138,6 +138,22 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                     "✗  mpv not found — install it to preview media files",
                     Style::default().fg(FAILURE),
                 )),
+                PreviewResult::GalleryShown(n) => Line::from(Span::styled(
+                    format!("✓  Gallery closed ({n} image{})", if *n == 1 { "" } else { "s" }),
+                    Style::default().fg(SUCCESS),
+                )),
+                PreviewResult::GalleryXdgOpened => Line::from(Span::styled(
+                    "✓  Opened ZIP in system viewer",
+                    Style::default().fg(SUCCESS),
+                )),
+                PreviewResult::TextShown(n) => Line::from(Span::styled(
+                    if *n > 0 {
+                        format!("✓  Text viewer closed ({n} lines)")
+                    } else {
+                        "✓  bat viewer closed".to_string()
+                    },
+                    Style::default().fg(SUCCESS),
+                )),
             };
             frame.render_widget(Paragraph::new(line), c[8]);
         }

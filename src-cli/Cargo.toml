@@ -13,6 +13,7 @@ rand = "0.8"
 image    = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 base64   = "0.22"
 tempfile = "3"
+zip      = { version = "2", default-features = false, features = ["deflate"] }
 
 # Compile crypto crates at full optimisation even in debug builds.
 # PBKDF2 + AES-GCM are 10-50x slower without -O3; this costs no debug-ability
