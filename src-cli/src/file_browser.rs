@@ -59,7 +59,8 @@ pub enum FileBrowserEvent {
 pub enum FileBrowserTarget {
     /// Fill the File path field in the Encrypt/Decrypt page.
     EncDecPath,
-    // Future: VaultOpen, VaultAddFile, …
+    /// Fill the File path field in the Preview page.
+    PreviewPath,
 }
 
 // ── Internal entry ─────────────────────────────────────────────────────────
