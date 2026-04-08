@@ -186,7 +186,29 @@ fn supports_kitty() -> bool {
     term == "xterm-kitty" || prog == "kitty" || prog == "wezterm"
 }
 
-fn decode_rgba(bytes: &[u8], ext: &str) -> Result<(Vec<u8>, u32, u32), String> {
+/// Query the terminal's usable pixel area for image display.
+/// Reserves space for the "Press any key" prompt (≈3 rows).
+/// Falls back to a cell-size estimate (8×16 px) when the terminal
+/// does not report pixel dimensions, and to 1920×1057 when the size
+/// cannot be queried at all.
+fn terminal_pixel_size() -> (u32, u32) {
+    match crossterm::terminal::window_size() {
+        Ok(ws) if ws.width > 0 && ws.height > 0 => {
+            let cell_h = ws.height as u32 / ws.rows.max(1) as u32;
+            let usable_h = (ws.height as u32).saturating_sub(cell_h * 3).max(1);
+            (ws.width as u32, usable_h)
+        }
+        Ok(ws) => {
+            // Terminal reports only cell counts; estimate with 8×16 px per cell.
+            let w = (ws.columns as u32 * 8).max(1);
+            let h = ((ws.rows.saturating_sub(3)) as u32 * 16).max(1);
+            (w, h)
+        }
+        Err(_) => (1920, 1057),
+    }
+}
+
+fn decode_rgba(bytes: &[u8], ext: &str, max_w: u32, max_h: u32) -> Result<(Vec<u8>, u32, u32), String> {
     let fmt = match ext {
         "jpg" | "jpeg" => ImageFormat::Jpeg,
         "png"          => ImageFormat::Png,
@@ -198,13 +220,13 @@ fn decode_rgba(bytes: &[u8], ext: &str) -> Result<(Vec<u8>, u32, u32), String> {
     };
     let img = image::load_from_memory_with_format(bytes, fmt).map_err(|e| e.to_string())?;
 
-    // Scale down large images to avoid overwhelming the terminal.
+    // Scale down to fit the terminal's usable pixel area.
     let img = {
         let (w, h) = (img.width(), img.height());
-        if w > 1920 || h > 1080 {
-            let scale = (1920.0 / w as f64).min(1080.0 / h as f64);
-            let nw = (w as f64 * scale) as u32;
-            let nh = (h as f64 * scale) as u32;
+        if w > max_w || h > max_h {
+            let scale = (max_w as f64 / w as f64).min(max_h as f64 / h as f64);
+            let nw = ((w as f64 * scale) as u32).max(1);
+            let nh = ((h as f64 * scale) as u32).max(1);
             img.resize(nw, nh, FilterType::Lanczos3)
         } else {
             img
@@ -319,20 +341,22 @@ pub(crate) fn render_image(
         return;
     }
 
-    let result = match decode_rgba(&bytes, &ext) {
-        Err(e) => PreviewResult::RenderFailed(e),
-        Ok((rgba, w, h)) => {
-            if supports_kitty() {
-                match render_kitty(terminal, &rgba, w, h) {
-                    Ok(()) => PreviewResult::KittyShown,
-                    Err(e) => PreviewResult::RenderFailed(e.to_string()),
-                }
-            } else {
-                match open_with_xdg(&bytes, &ext) {
-                    Ok(()) => PreviewResult::XdgOpened,
-                    Err(e) => PreviewResult::RenderFailed(e),
-                }
-            }
+    let result = if supports_kitty() {
+        // Decode at the terminal's actual pixel resolution so the image never
+        // overflows the screen and the RGBA buffer stays as small as possible.
+        let (max_w, max_h) = terminal_pixel_size();
+        match decode_rgba(&bytes, &ext, max_w, max_h) {
+            Err(e) => PreviewResult::RenderFailed(e),
+            Ok((rgba, w, h)) => match render_kitty(terminal, &rgba, w, h) {
+                Ok(()) => PreviewResult::KittyShown,
+                Err(e) => PreviewResult::RenderFailed(e.to_string()),
+            },
+        }
+    } else {
+        // xdg-open receives the original bytes; no decode needed.
+        match open_with_xdg(&bytes, &ext) {
+            Ok(()) => PreviewResult::XdgOpened,
+            Err(e) => PreviewResult::RenderFailed(e),
         }
     };
 
