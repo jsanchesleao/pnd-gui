@@ -112,11 +112,15 @@ cargo build --release  # produce ./target/release/pnd-cli
 
 ### Architecture
 
-Three source files; no external state beyond the filesystem:
+Source files mirror the web app's component-per-folder pattern. No external state beyond the filesystem.
 
-- **`main.rs`** — Application shell. Contains the ratatui event loop, all page state (`EncDecState`, `OpStatus`), drawing functions, and key-event handlers. Crypto operations run on a background thread (`std::thread::spawn`); progress flows back to the UI via `mpsc::channel<WorkerMsg>`. The event loop uses `event::poll(50 ms)` while an operation is running so the progress bar redraws without user input, and blocks (`event::read`) otherwise.
+- **`main.rs`** — Application shell only: palette constants (`pub(crate) ACCENT/DIM/SUCCESS/FAILURE`), `MenuItem`/`Screen` enums, `App` struct, `draw_menu`, the ratatui event loop, and `apply_browser_selection`. Crypto operations run on a background thread (`std::thread::spawn`); progress flows back to the UI via `mpsc::channel<WorkerMsg>`. The event loop uses `event::poll(50 ms)` while an operation is running so the progress bar redraws without user input, and blocks (`event::read`) otherwise.
 - **`crypto.rs`** — Wire-compatible implementation of the pnd-gui single-file format: 64 MiB frames, each independently encrypted as `[salt 16 B][IV 12 B][AES-256-GCM ciphertext+tag]`, preceded by a 4-byte big-endian size. PBKDF2-HMAC-SHA256 (100 k iterations) is called once per frame (each frame has its own random salt). Both `encrypt_file` and `decrypt_file` accept `impl Read`/`impl Write` and stream one frame at a time — no full file is loaded into memory. An `on_progress: &mut impl FnMut(usize)` callback receives plaintext bytes per frame for progress reporting.
 - **`file_browser.rs`** — Self-contained full-screen overlay widget. `FileBrowser::open(start_dir, target)` → `fb.draw(frame)` + `fb.handle_key(code)` → `FileBrowserEvent::Selected(PathBuf) | Cancelled | Pending`. Extend `FileBrowserTarget` when new pages need a file picker.
+- **`pages/`** — One file per tab, each owning its state, drawing function, and key handler:
+  - `enc_dec.rs` — `EncDecState`, `WorkerMsg`, `OpStatus`; private helpers `outer_block`, `input_block`, `tail_fit`; `draw_enc_dec(frame, &EncDecState)`, `handle_enc_dec(&mut App, KeyCode)`.
+  - `preview.rs` — `draw_preview`, `handle_preview` (coming soon stub).
+  - `vault.rs` — `draw_vault`, `handle_vault` (coming soon stub).
 
 ### Wire format compatibility
 
@@ -126,4 +130,4 @@ The CLI's 64 MiB frame size differs from the web's 1 MiB frames, but both format
 
 - `OpStatus` is a discriminated enum (`Idle | Running(u8) | Success(String) | Failure(String)`); use it, not boolean flags.
 - All input is blocked while `Running`. Navigation shortcuts (Esc, q) are also suppressed until the operation completes.
-- The palette constants (`ACCENT`, `DIM`, `SUCCESS`, `FAILURE`) are defined at the top of `main.rs`; `file_browser.rs` keeps its own local copy to stay self-contained.
+- The palette constants (`ACCENT`, `DIM`, `SUCCESS`, `FAILURE`) are `pub(crate)` in `main.rs`; page modules import them via `crate::`. `file_browser.rs` keeps its own local copy to stay self-contained.
