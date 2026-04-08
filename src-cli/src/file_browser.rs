@@ -63,6 +63,8 @@ pub enum FileBrowserTarget {
     PreviewPath,
     /// Pick a vault root directory (fires Selected on Enter for directories too).
     VaultDir,
+    /// Pick the root directory for a new vault being created.
+    VaultCreateDir,
 }
 
 // ── Internal entry ─────────────────────────────────────────────────────────

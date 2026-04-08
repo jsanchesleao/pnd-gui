@@ -111,7 +111,7 @@ impl App {
             }
             MenuItem::Vault => {
                 self.vault = pages::vault::VaultState::new();
-                self.file_browser = Some(FileBrowser::open_for_dir(None, FileBrowserTarget::VaultDir));
+                // No file browser here — the vault submenu opens first.
             }
         }
         self.screen = Screen::Page(item);
@@ -261,6 +261,9 @@ fn apply_browser_selection(app: &mut App, target: FileBrowserTarget, path: PathB
         }
         FileBrowserTarget::VaultDir => {
             app.vault.set_path(path.to_string_lossy().as_ref());
+        }
+        FileBrowserTarget::VaultCreateDir => {
+            app.vault.set_create_path(path.to_string_lossy().as_ref());
         }
     }
 }

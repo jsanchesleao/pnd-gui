@@ -8,14 +8,23 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph},
 };
 
-use crate::{ACCENT, DIM, FAILURE};
+use crate::{ACCENT, DIM, FAILURE, SUCCESS};
 use crate::pages::widgets::{input_block, outer_block, tail_fit};
 use super::state::{BrowseState, PanelFocus, Phase, VaultState};
 
 pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
     match &state.phase {
+        Phase::VaultMenu { cursor } => draw_vault_menu(frame, *cursor),
         Phase::Locked { vault_path, password, focus, error } => {
             draw_locked(frame, vault_path, password, *focus, error.as_deref(), false)
+        }
+        Phase::Creating { vault_path, blobs_dir, password, focus, error } => {
+            draw_creating(frame, vault_path, blobs_dir, password, *focus, error.as_deref())
+        }
+        Phase::ConfirmCreateDir { vault_path, .. } => {
+            // Show the creating form dimmed behind the overlay.
+            draw_creating(frame, vault_path, "", "", 0, None);
+            draw_confirm_create_dir_overlay(frame, vault_path);
         }
         Phase::Opening(pct) => {
             draw_locked(frame, "", "", 1, None, true);
@@ -46,6 +55,77 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
             }
         }
     }
+}
+
+// ── Vault submenu ──────────────────────────────────────────────────────────
+
+fn draw_vault_menu(frame: &mut Frame, cursor: usize) {
+    let area = frame.area();
+    frame.render_widget(outer_block("Vault"), area);
+
+    let c = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Length(1), // [0] description
+            Constraint::Length(2), // [1] spacer
+            Constraint::Length(1), // [2] item 0 — Open Vault
+            Constraint::Length(1), // [3] item 0 description
+            Constraint::Length(1), // [4] spacer
+            Constraint::Length(1), // [5] item 1 — New Vault
+            Constraint::Length(1), // [6] item 1 description
+            Constraint::Min(0),    // [7] filler
+            Constraint::Length(1), // [8] hint
+        ])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Select an action:",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )),
+        c[0],
+    );
+
+    let items: &[(&str, &str)] = &[
+        ("Open Vault",  "Unlock and browse an existing encrypted vault"),
+        ("New Vault",   "Create a new empty vault in a folder you choose"),
+    ];
+
+    for (i, (label, desc)) in items.iter().enumerate() {
+        let (row_label, row_desc) = if i == 0 { (c[2], c[3]) } else { (c[5], c[6]) };
+        let selected = cursor == i;
+
+        let prefix = if selected { "▶ " } else { "  " };
+        let label_style = if selected {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let desc_style = if selected {
+            Style::default().fg(SUCCESS)
+        } else {
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
+        };
+
+        frame.render_widget(
+            Paragraph::new(Span::styled(format!("{prefix}{label}"), label_style)),
+            row_label,
+        );
+        frame.render_widget(
+            Paragraph::new(Span::styled(format!("    {desc}"), desc_style)),
+            row_desc,
+        );
+    }
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "↑↓ / jk  navigate    Enter  select    Esc  back to main menu",
+            Style::default().fg(DIM),
+        ))
+        .alignment(Alignment::Center),
+        c[8],
+    );
 }
 
 // ── Locked / Opening ───────────────────────────────────────────────────────
@@ -139,6 +219,113 @@ fn draw_locked(
     frame.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
         c[10],
+    );
+}
+
+fn draw_creating(
+    frame: &mut Frame,
+    vault_path: &str,
+    blobs_dir: &str,
+    password: &str,
+    focus: usize,
+    error: Option<&str>,
+) {
+    let area = frame.area();
+    frame.render_widget(outer_block("Vault — New"), area);
+
+    let c = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Length(1), // [0] info
+            Constraint::Length(1), // [1] blank
+            Constraint::Length(3), // [2] vault folder
+            Constraint::Length(1), // [3] path hint
+            Constraint::Length(1), // [4] blank
+            Constraint::Length(3), // [5] blobs subfolder
+            Constraint::Length(1), // [6] blobs hint
+            Constraint::Length(1), // [7] blank
+            Constraint::Length(3), // [8] password
+            Constraint::Length(1), // [9] blank
+            Constraint::Length(1), // [10] error
+            Constraint::Min(0),    // [11] filler
+            Constraint::Length(1), // [12] hint bar
+        ])
+        .split(area);
+
+    // [0] info
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "Create a new encrypted vault in an existing folder",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))),
+        c[0],
+    );
+
+    // [2] vault folder
+    let inner_w = c[2].width.saturating_sub(4) as usize;
+    let path_display = {
+        let s = if focus == 0 { format!("{vault_path}|") } else { vault_path.to_string() };
+        tail_fit(&s, inner_w).to_string()
+    };
+    let path_label = if focus == 0 { "Vault folder  Enter→browse" } else { "Vault folder" };
+    frame.render_widget(
+        Paragraph::new(path_display.as_str()).block(input_block(path_label, focus == 0)),
+        c[2],
+    );
+    if focus == 0 {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "  type a path, or press Enter to browse for the vault folder",
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )),
+            c[3],
+        );
+    }
+
+    // [5] blobs subfolder
+    let blobs_display = if focus == 1 { format!("{blobs_dir}|") } else { blobs_dir.to_string() };
+    frame.render_widget(
+        Paragraph::new(blobs_display.as_str())
+            .block(input_block("Blobs subfolder (optional)", focus == 1)),
+        c[5],
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "  leave empty to store blobs alongside the index",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )),
+        c[6],
+    );
+
+    // [8] password
+    let masked = "•".repeat(password.len());
+    let pass_display = if focus == 2 { format!("{masked}|") } else { masked };
+    frame.render_widget(
+        Paragraph::new(pass_display.as_str()).block(input_block("Master password", focus == 2)),
+        c[8],
+    );
+
+    // [10] error
+    if let Some(err) = error {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                format!("✗  {err}"),
+                Style::default().fg(FAILURE),
+            )),
+            c[10],
+        );
+    }
+
+    // [12] hint bar
+    let hint = match focus {
+        0 => "Esc back    Tab next field    Enter browse filesystem",
+        1 => "Esc back    Tab next field    Enter skip to password",
+        _ => "Esc back    Tab previous field    Enter create vault",
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
+        c[12],
     );
 }
 
@@ -417,6 +604,64 @@ fn draw_rename_overlay(frame: &mut Frame, input: &str, original: &str) {
             "Enter confirm    Esc cancel",
             Style::default().fg(DIM),
         )).alignment(Alignment::Center),
+        rows[3],
+    );
+}
+
+fn draw_confirm_create_dir_overlay(frame: &mut Frame, vault_path: &str) {
+    let area = centered_popup(frame.area(), 62, 7);
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " Directory not found ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "The following directory does not exist:",
+            Style::default().fg(DIM),
+        ))
+        .alignment(Alignment::Center),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(vault_path, Style::default().fg(Color::White)))
+            .alignment(Alignment::Center),
+        rows[1],
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Create it and continue?",
+            Style::default().fg(Color::White),
+        ))
+        .alignment(Alignment::Center),
+        rows[2],
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "y / Enter  yes    n / Esc  no",
+            Style::default().fg(DIM),
+        ))
+        .alignment(Alignment::Center),
         rows[3],
     );
 }

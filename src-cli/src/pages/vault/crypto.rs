@@ -138,6 +138,47 @@ fn encrypt_with_password(plaintext: &[u8], password: &str) -> Vec<u8> {
 
 // ── Public vault operations ───────────────────────────────────────────────
 
+/// Create a new empty vault at `root` and write the initial `index.lock`.
+///
+/// - `root` must be an existing directory.
+/// - `root/index.lock` must not already exist.
+/// - If `blobs_dir_name` is `Some("name")`, the subdirectory `root/name/` is created.
+pub(crate) fn create_vault(
+    root: &Path,
+    blobs_dir_name: Option<&str>,
+    password: &str,
+) -> Result<VaultHandle, VaultError> {
+    if !root.is_dir() {
+        return Err(VaultError::InvalidFormat(
+            "vault path must be an existing directory".into(),
+        ));
+    }
+    let index_path = root.join("index.lock");
+    if index_path.exists() {
+        return Err(VaultError::InvalidFormat(
+            "index.lock already exists — this directory is already a vault".into(),
+        ));
+    }
+    if let Some(name) = blobs_dir_name {
+        std::fs::create_dir_all(root.join(name))?;
+    }
+    let root_buf = root.to_path_buf();
+    let index = VaultIndex {
+        version: 1,
+        blobs_dir: blobs_dir_name.map(str::to_string),
+        entries: std::collections::HashMap::new(),
+    };
+    let blobs_dir = VaultHandle::resolve_blobs_dir(&root_buf, &index);
+    let handle = VaultHandle {
+        root: root_buf,
+        blobs_dir,
+        password: password.to_string(),
+        index,
+    };
+    save_vault(&handle)?;
+    Ok(handle)
+}
+
 /// Read and decrypt `<root>/index.lock`, returning a populated [`VaultHandle`].
 pub(crate) fn open_vault(root: &Path, password: &str) -> Result<VaultHandle, VaultError> {
     let index_path = root.join("index.lock");

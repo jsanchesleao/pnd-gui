@@ -10,6 +10,7 @@ use super::types::{VaultEntry, VaultHandle};
 pub(super) enum WorkerMsg {
     Progress(u8),
     Opened(VaultHandle),
+    Created(VaultHandle),
     Failed(String),
 }
 
@@ -212,13 +213,29 @@ impl BrowseState {
 // ── Phase ──────────────────────────────────────────────────────────────────
 
 pub(crate) enum Phase {
+    /// Top-level submenu: Open Vault / New Vault.
+    VaultMenu { cursor: usize },
     Locked {
         vault_path: String,
         password: String,
         focus: usize,
         error: Option<String>,
     },
-    /// Background PBKDF2 + index decrypt in progress.
+    /// Create-new-vault form (3 fields: vault folder, blobs subfolder, password).
+    Creating {
+        vault_path: String,
+        blobs_dir: String,
+        password: String,
+        focus: usize,
+        error: Option<String>,
+    },
+    /// Confirm creating a non-existent directory before writing the vault.
+    ConfirmCreateDir {
+        vault_path: String,
+        blobs_dir: String,
+        password: String,
+    },
+    /// Background PBKDF2 + index decrypt (or create) in progress.
     Opening(u8),
     /// Vault open, user is browsing. Browse data lives in `VaultState::browse`.
     Browse,
@@ -242,12 +259,7 @@ pub(crate) struct VaultState {
 impl VaultState {
     pub(crate) fn new() -> Self {
         VaultState {
-            phase: Phase::Locked {
-                vault_path: String::new(),
-                password: String::new(),
-                focus: 0,
-                error: None,
-            },
+            phase: Phase::VaultMenu { cursor: 0 },
             browse: None,
             rx: None,
         }
@@ -269,6 +281,114 @@ impl VaultState {
 
     pub(crate) fn is_opening(&self) -> bool {
         matches!(self.phase, Phase::Opening(_))
+    }
+
+    // ── Creating ────────────────────────────────────────────────────────────
+
+    pub(crate) fn enter_creating(&mut self) {
+        self.phase = Phase::Creating {
+            vault_path: String::new(),
+            blobs_dir: String::new(),
+            password: String::new(),
+            focus: 0,
+            error: None,
+        };
+    }
+
+    /// Set vault_path from the directory browser during the Creating flow. Advances focus to blobs_dir.
+    pub(crate) fn set_create_path(&mut self, path: &str) {
+        if let Phase::Creating { vault_path, focus, .. } = &mut self.phase {
+            *vault_path = path.to_string();
+            *focus = 1;
+        }
+    }
+
+    pub(crate) fn advance_create_focus(&mut self) {
+        if let Phase::Creating { focus, .. } = &mut self.phase {
+            *focus = (*focus + 1) % 3;
+        }
+    }
+
+    fn set_creating_error(&mut self, msg: &str) {
+        if let Phase::Creating { error, .. } = &mut self.phase {
+            *error = Some(msg.to_string());
+        }
+    }
+
+    /// Validate inputs and spawn the background create thread.
+    pub(crate) fn start_create(&mut self) {
+        let (vault_path, blobs_dir, password) = match &self.phase {
+            Phase::Creating { vault_path, blobs_dir, password, .. } => {
+                (vault_path.clone(), blobs_dir.clone(), password.clone())
+            }
+            _ => return,
+        };
+
+        if vault_path.is_empty() {
+            self.set_creating_error("Vault folder cannot be empty.");
+            return;
+        }
+        if password.is_empty() {
+            self.set_creating_error("Password cannot be empty.");
+            return;
+        }
+
+        let p = std::path::Path::new(&vault_path);
+        if p.is_file() {
+            self.set_creating_error("Path points to a file, not a directory.");
+            return;
+        }
+        if !p.exists() {
+            self.phase = Phase::ConfirmCreateDir { vault_path, blobs_dir, password };
+            return;
+        }
+
+        self.spawn_create(vault_path, blobs_dir, password);
+    }
+
+    /// Confirm creating the missing directory and proceed with vault creation.
+    pub(crate) fn confirm_create_dir(&mut self) {
+        let (vault_path, blobs_dir, password) = match &self.phase {
+            Phase::ConfirmCreateDir { vault_path, blobs_dir, password } => {
+                (vault_path.clone(), blobs_dir.clone(), password.clone())
+            }
+            _ => return,
+        };
+        self.spawn_create(vault_path, blobs_dir, password);
+    }
+
+    /// Cancel directory creation and return to the Creating form.
+    pub(crate) fn cancel_create_dir(&mut self) {
+        let (vault_path, blobs_dir, password) = match &self.phase {
+            Phase::ConfirmCreateDir { vault_path, blobs_dir, password } => {
+                (vault_path.clone(), blobs_dir.clone(), password.clone())
+            }
+            _ => return,
+        };
+        self.phase = Phase::Creating { vault_path, blobs_dir, password, focus: 0, error: None };
+    }
+
+    fn spawn_create(&mut self, vault_path: String, blobs_dir: String, password: String) {
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        self.phase = Phase::Opening(0);
+
+        std::thread::spawn(move || {
+            let _ = tx.send(WorkerMsg::Progress(5));
+            let path = std::path::Path::new(&vault_path);
+            // Create the directory if it doesn't exist yet (confirmed by user).
+            if !path.exists() {
+                if let Err(e) = std::fs::create_dir_all(path) {
+                    let _ = tx.send(WorkerMsg::Failed(format!("Could not create directory: {e}")));
+                    return;
+                }
+            }
+            let blobs = if blobs_dir.is_empty() { None } else { Some(blobs_dir.as_str()) };
+            match super::crypto::create_vault(path, blobs, &password) {
+                Ok(handle) => { let _ = tx.send(WorkerMsg::Created(handle)); }
+                Err(e)     => { let _ = tx.send(WorkerMsg::Failed(e.to_string())); }
+            }
+        });
     }
 
     /// Validate inputs and spawn the background unlock thread.
@@ -315,7 +435,7 @@ impl VaultState {
                 Ok(WorkerMsg::Progress(pct)) => {
                     self.phase = Phase::Opening(pct);
                 }
-                Ok(WorkerMsg::Opened(handle)) => {
+                Ok(WorkerMsg::Opened(handle)) | Ok(WorkerMsg::Created(handle)) => {
                     self.rx = None;
                     self.browse = Some(BrowseState::new(handle));
                     self.phase = Phase::Browse;
@@ -512,15 +632,43 @@ impl VaultState {
         browse.status_msg = Some(msg);
     }
 
-    /// Return to the Locked phase and discard the open vault.
+    /// Return to the vault submenu and discard the open vault.
     pub(crate) fn lock(&mut self) {
         self.browse = None;
-        self.phase = Phase::Locked {
-            vault_path: String::new(),
-            password: String::new(),
-            focus: 0,
-            error: None,
+        self.phase = Phase::VaultMenu { cursor: 0 };
+    }
+
+    // ── VaultMenu ───────────────────────────────────────────────────────────
+
+    pub(crate) fn menu_up(&mut self) {
+        if let Phase::VaultMenu { cursor } = &mut self.phase {
+            if *cursor > 0 { *cursor -= 1; }
+        }
+    }
+
+    pub(crate) fn menu_down(&mut self) {
+        if let Phase::VaultMenu { cursor } = &mut self.phase {
+            if *cursor < 1 { *cursor += 1; }
+        }
+    }
+
+    /// Select the highlighted menu item (0 = Open, 1 = New).
+    pub(crate) fn menu_select(&mut self) {
+        let cursor = match &self.phase {
+            Phase::VaultMenu { cursor } => *cursor,
+            _ => return,
         };
+        match cursor {
+            0 => {
+                self.phase = Phase::Locked {
+                    vault_path: String::new(),
+                    password: String::new(),
+                    focus: 0,
+                    error: None,
+                };
+            }
+            _ => self.enter_creating(),
+        }
     }
 }
 

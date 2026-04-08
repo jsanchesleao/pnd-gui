@@ -478,14 +478,15 @@ with a progress indicator; the browse UI remains responsive.
 
 ## Implementation Order
 
-1. **`types.rs`** — data structures and error type (no I/O, easy to test)
-2. **`crypto.rs`** — `pbkdf2_key`, `decrypt_blob`, `decrypt_index` (verify against a vault
+1. (done) **`types.rs`** — data structures and error type (no I/O, easy to test)
+2. (done) **`crypto.rs`** — `pbkdf2_key`, `decrypt_blob`, `decrypt_index` (verify against a vault
    created by the GUI before proceeding)
-3. **`state.rs`** — `VaultState`, open/list logic, Phase transitions
-4. **`draw.rs`** — locked form first, then two-panel browse layout
-5. **`handler.rs`** — key routing, starting with navigation only
-6. **Wire into `main.rs`** — add `vault` field, update `apply_browser_selection`,
+3. (done) **`state.rs`** — `VaultState`, open/list logic, Phase transitions
+4. (done) **`draw.rs`** — locked form first, then two-panel browse layout
+5. (done) **`handler.rs`** — key routing, starting with navigation only
+6. (done) **Wire into `main.rs`** — add `vault` field, update `apply_browser_selection`,
    add `FileBrowserTarget::VaultDir`
-7. **Operations** — rename, delete, move/paste, save
-8. **Preview integration** — decrypt and forward to existing preview pipeline
-9. **Folder gallery** (optional, last)
+7. (done) **Create Vault** — add option to create a vault by choosing a directory
+8. **Operations** — rename, delete, move/paste, save
+9. **Preview integration** — decrypt and forward to existing preview pipeline
+10. **Folder gallery** (optional, last)
