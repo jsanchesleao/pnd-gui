@@ -201,3 +201,234 @@ pub(crate) fn decrypt_entry(handle: &VaultHandle, uuid: &str) -> Result<Vec<u8>,
 
     Ok(out)
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /// Build a minimal VaultHandle backed by a real temp directory.
+    fn make_handle(dir: &TempDir, password: &str) -> VaultHandle {
+        let root = dir.path().to_path_buf();
+        let index = VaultIndex { version: 1, blobs_dir: None, entries: HashMap::new() };
+        VaultHandle {
+            blobs_dir: root.clone(),
+            root,
+            password: password.to_string(),
+            index,
+        }
+    }
+
+    // ── generate_key_base64 ──────────────────────────────────────────────────
+
+    #[test]
+    fn key_base64_has_correct_length() {
+        // 32 raw bytes → 44 base64 characters (STANDARD encoding, no line breaks)
+        let k = generate_key_base64();
+        assert_eq!(k.len(), 44, "expected 44-char base64 for 32 bytes, got: {k}");
+    }
+
+    #[test]
+    fn key_base64_is_unique_each_call() {
+        let k1 = generate_key_base64();
+        let k2 = generate_key_base64();
+        assert_ne!(k1, k2, "two generated keys should differ");
+    }
+
+    #[test]
+    fn key_base64_is_valid_base64() {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        let k = generate_key_base64();
+        let decoded = STANDARD.decode(&k).expect("should decode as valid base64");
+        assert_eq!(decoded.len(), 32);
+    }
+
+    // ── encrypt_blob_with_key / decrypt_blob_with_key ────────────────────────
+
+    #[test]
+    fn blob_key_roundtrip() {
+        let key = generate_key_base64();
+        let plain = b"hello from vault blob";
+        let enc = encrypt_blob_with_key(plain, &key).unwrap();
+        let dec = decrypt_blob_with_key(&enc, &key).unwrap();
+        assert_eq!(dec, plain);
+    }
+
+    #[test]
+    fn blob_key_roundtrip_empty_plaintext() {
+        let key = generate_key_base64();
+        let enc = encrypt_blob_with_key(&[], &key).unwrap();
+        let dec = decrypt_blob_with_key(&enc, &key).unwrap();
+        assert!(dec.is_empty());
+    }
+
+    #[test]
+    fn blob_key_wrong_key_returns_error() {
+        let key1 = generate_key_base64();
+        let key2 = generate_key_base64();
+        let enc = encrypt_blob_with_key(b"secret", &key1).unwrap();
+        assert!(matches!(decrypt_blob_with_key(&enc, &key2), Err(VaultError::WrongPassword)));
+    }
+
+    #[test]
+    fn blob_key_too_short_returns_error() {
+        let key = generate_key_base64();
+        let short = vec![0u8; 10];
+        let result = decrypt_blob_with_key(&short, &key);
+        assert!(matches!(result, Err(VaultError::InvalidFormat(_))));
+    }
+
+    #[test]
+    fn blob_key_bad_base64_returns_error() {
+        let data = vec![0u8; 50];
+        let result = decrypt_blob_with_key(&data, "not-valid-base64!!!");
+        assert!(matches!(result, Err(VaultError::InvalidFormat(_))));
+    }
+
+    #[test]
+    fn blob_salt_field_is_zeroed() {
+        let key = generate_key_base64();
+        let enc = encrypt_blob_with_key(b"data", &key).unwrap();
+        assert_eq!(&enc[..16], &[0u8; 16], "salt bytes should be zeroed for blob files");
+    }
+
+    #[test]
+    fn two_encryptions_produce_distinct_ciphertext() {
+        let key = generate_key_base64();
+        let e1 = encrypt_blob_with_key(b"same", &key).unwrap();
+        let e2 = encrypt_blob_with_key(b"same", &key).unwrap();
+        assert_ne!(e1, e2, "random IV must produce unique ciphertext each call");
+    }
+
+    // ── open_vault / save_vault ──────────────────────────────────────────────
+
+    #[test]
+    fn save_then_open_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let mut handle = make_handle(&dir, "correct-password");
+        handle.index.entries.insert(
+            "uuid-1".to_string(),
+            super::super::types::VaultEntry {
+                name: "file.txt".to_string(),
+                path: "docs".to_string(),
+                size: 42,
+                parts: vec![],
+                thumbnail_uuid: None,
+                thumbnail_key_base64: None,
+            },
+        );
+
+        save_vault(&handle).unwrap();
+        let reopened = open_vault(dir.path(), "correct-password").unwrap();
+
+        assert_eq!(reopened.index.version, 1);
+        assert!(reopened.index.entries.contains_key("uuid-1"));
+        let entry = &reopened.index.entries["uuid-1"];
+        assert_eq!(entry.name, "file.txt");
+        assert_eq!(entry.path, "docs");
+        assert_eq!(entry.size, 42);
+    }
+
+    #[test]
+    fn open_vault_wrong_password_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let handle = make_handle(&dir, "correct");
+        save_vault(&handle).unwrap();
+        assert!(matches!(open_vault(dir.path(), "wrong"), Err(VaultError::WrongPassword)));
+    }
+
+    #[test]
+    fn open_vault_missing_index_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let result = open_vault(dir.path(), "pw");
+        assert!(matches!(result, Err(VaultError::InvalidFormat(_))));
+    }
+
+    #[test]
+    fn save_vault_no_tmp_leftover() {
+        let dir = TempDir::new().unwrap();
+        let handle = make_handle(&dir, "pw");
+        save_vault(&handle).unwrap();
+        assert!(!dir.path().join("index.lock.tmp").exists());
+        assert!(dir.path().join("index.lock").exists());
+    }
+
+    // ── decrypt_entry ────────────────────────────────────────────────────────
+
+    #[test]
+    fn decrypt_single_part_entry() {
+        let dir = TempDir::new().unwrap();
+        let plaintext = b"vault file contents";
+        let key = generate_key_base64();
+        let blob = encrypt_blob_with_key(plaintext, &key).unwrap();
+        let blob_uuid = "test-blob-uuid";
+        std::fs::write(dir.path().join(blob_uuid), &blob).unwrap();
+
+        let mut handle = make_handle(&dir, "pw");
+        handle.index.entries.insert(
+            "file-uuid".to_string(),
+            super::super::types::VaultEntry {
+                name: "file.txt".to_string(),
+                path: "".to_string(),
+                size: plaintext.len() as u64,
+                parts: vec![super::super::types::VaultPart {
+                    uuid: blob_uuid.to_string(),
+                    key_base64: key,
+                }],
+                thumbnail_uuid: None,
+                thumbnail_key_base64: None,
+            },
+        );
+
+        let recovered = decrypt_entry(&handle, "file-uuid").unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn decrypt_entry_not_found() {
+        let dir = TempDir::new().unwrap();
+        let handle = make_handle(&dir, "pw");
+        assert!(matches!(
+            decrypt_entry(&handle, "nonexistent"),
+            Err(VaultError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn decrypt_multi_part_entry() {
+        let dir = TempDir::new().unwrap();
+        let part1 = b"first chunk";
+        let part2 = b"second chunk";
+        let key1 = generate_key_base64();
+        let key2 = generate_key_base64();
+
+        std::fs::write(dir.path().join("blob-1"), encrypt_blob_with_key(part1, &key1).unwrap()).unwrap();
+        std::fs::write(dir.path().join("blob-2"), encrypt_blob_with_key(part2, &key2).unwrap()).unwrap();
+
+        let mut handle = make_handle(&dir, "pw");
+        handle.index.entries.insert(
+            "file-uuid".to_string(),
+            super::super::types::VaultEntry {
+                name: "big.bin".to_string(),
+                path: "".to_string(),
+                size: (part1.len() + part2.len()) as u64,
+                parts: vec![
+                    super::super::types::VaultPart { uuid: "blob-1".to_string(), key_base64: key1 },
+                    super::super::types::VaultPart { uuid: "blob-2".to_string(), key_base64: key2 },
+                ],
+                thumbnail_uuid: None,
+                thumbnail_key_base64: None,
+            },
+        );
+
+        let recovered = decrypt_entry(&handle, "file-uuid").unwrap();
+        let mut expected = part1.to_vec();
+        expected.extend_from_slice(part2);
+        assert_eq!(recovered, expected);
+    }
+}

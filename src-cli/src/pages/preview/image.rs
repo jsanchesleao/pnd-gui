@@ -154,6 +154,126 @@ pub(super) fn render_kitty(
     Ok(())
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_image_ext ────────────────────────────────────────────────────────
+
+    #[test]
+    fn image_extensions_recognised() {
+        for ext in &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif"] {
+            assert!(is_image_ext(ext), "{ext} should be an image ext");
+        }
+    }
+
+    #[test]
+    fn non_image_extensions_rejected() {
+        for ext in &["mp4", "txt", "pdf", "zip", "rs", "lock", ""] {
+            assert!(!is_image_ext(ext), "{ext} should not be an image ext");
+        }
+    }
+
+    // ── transmit_kitty ──────────────────────────────────────────────────────
+
+    #[test]
+    fn transmit_kitty_single_chunk_format() {
+        // 64 RGBA bytes (16 pixels) → fits in one chunk (< 3072 bytes)
+        let rgba = vec![255u8; 64];
+        let mut out = Vec::new();
+        transmit_kitty(&mut out, &rgba, 4, 4).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        // Must start with Kitty APC escape
+        assert!(s.starts_with("\x1b_G"), "should start with APC escape");
+        // First chunk carries image dimensions
+        assert!(s.contains("a=T"), "should have transmit action");
+        assert!(s.contains("f=32"), "should have RGBA format");
+        assert!(s.contains("s=4"), "should have width=4");
+        assert!(s.contains("v=4"), "should have height=4");
+        // Single chunk: m=0 (no more)
+        assert!(s.contains("m=0"), "single chunk should have m=0");
+        // Must end with APC terminator
+        assert!(s.ends_with("\x1b\\"), "should end with ST");
+    }
+
+    #[test]
+    fn transmit_kitty_multi_chunk_has_continuation_flag() {
+        // > 3072 bytes raw → multiple chunks
+        let rgba = vec![128u8; 3073 * 4]; // definitely more than one chunk
+        let mut out = Vec::new();
+        transmit_kitty(&mut out, &rgba, 10, 10).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        // The first chunk should have m=1 (more chunks follow)
+        assert!(s.contains("m=1"), "first chunk of many should have m=1");
+        // The output must also contain m=0 to close the sequence
+        assert!(s.contains("m=0"), "last chunk should have m=0");
+    }
+
+    #[test]
+    fn transmit_kitty_empty_rgba_does_not_panic() {
+        let mut out = Vec::new();
+        transmit_kitty(&mut out, &[], 0, 0).unwrap();
+        // Degenerate path: one empty sequence is emitted
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("\x1b_G"), "even empty input should emit an APC sequence");
+    }
+
+    // ── decode_rgba ─────────────────────────────────────────────────────────
+
+    fn make_test_png(w: u32, h: u32) -> Vec<u8> {
+        let img = image::RgbaImage::from_pixel(w, h, image::Rgba([255, 128, 0, 255]));
+        let mut buf = Vec::new();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), ImageFormat::Png)
+            .unwrap();
+        buf
+    }
+
+    #[test]
+    fn decode_rgba_small_png() {
+        let png = make_test_png(3, 2);
+        let (rgba, w, h) = decode_rgba(&png, "png", 1920, 1080).unwrap();
+        assert_eq!(w, 3);
+        assert_eq!(h, 2);
+        assert_eq!(rgba.len(), (3 * 2 * 4) as usize); // RGBA = 4 bytes/pixel
+    }
+
+    #[test]
+    fn decode_rgba_scales_down_to_fit() {
+        let png = make_test_png(100, 100);
+        // Constrain to 10x10 — image must be scaled down
+        let (_, w, h) = decode_rgba(&png, "png", 10, 10).unwrap();
+        assert!(w <= 10, "width {w} should be ≤ 10");
+        assert!(h <= 10, "height {h} should be ≤ 10");
+    }
+
+    #[test]
+    fn decode_rgba_no_upscale_when_fits() {
+        let png = make_test_png(4, 4);
+        let (_, w, h) = decode_rgba(&png, "png", 1920, 1080).unwrap();
+        // Image fits within bounds — dimensions must be unchanged
+        assert_eq!(w, 4);
+        assert_eq!(h, 4);
+    }
+
+    #[test]
+    fn decode_rgba_unsupported_ext_returns_error() {
+        let result = decode_rgba(b"irrelevant", "xyz", 1920, 1080);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unsupported image format"));
+    }
+
+    #[test]
+    fn decode_rgba_corrupt_bytes_returns_error() {
+        let result = decode_rgba(b"not a real png", "png", 1920, 1080);
+        assert!(result.is_err());
+    }
+}
+
 /// Write `bytes` to a temp file with the correct extension and open it with
 /// xdg-open asynchronously. The temp file is intentionally leaked in `/tmp`
 /// so the system viewer has time to read it.

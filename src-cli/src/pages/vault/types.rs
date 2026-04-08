@@ -149,3 +149,159 @@ impl std::fmt::Display for VaultError {
 impl From<io::Error> for VaultError {
     fn from(e: io::Error) -> Self { VaultError::Io(e) }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    fn make_entry(name: &str, path: &str) -> VaultEntry {
+        VaultEntry {
+            name: name.to_string(),
+            path: path.to_string(),
+            size: 0,
+            parts: vec![],
+            thumbnail_uuid: None,
+            thumbnail_key_base64: None,
+        }
+    }
+
+    fn make_handle_with_entries(entries: &[(&str, &str, &str)]) -> VaultHandle {
+        // entries: (uuid, name, path)
+        let mut map = HashMap::new();
+        for (uuid, name, path) in entries {
+            map.insert(uuid.to_string(), make_entry(name, path));
+        }
+        let index = VaultIndex { version: 1, blobs_dir: None, entries: map };
+        let root = PathBuf::from("/tmp/vault");
+        let blobs_dir = root.clone();
+        VaultHandle { root, blobs_dir, password: "pw".to_string(), index }
+    }
+
+    // ── resolve_blobs_dir ────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_blobs_dir_no_sub() {
+        let root = PathBuf::from("/my/vault");
+        let index = VaultIndex { version: 1, blobs_dir: None, entries: HashMap::new() };
+        let result = VaultHandle::resolve_blobs_dir(&root, &index);
+        assert_eq!(result, root);
+    }
+
+    #[test]
+    fn resolve_blobs_dir_with_sub() {
+        let root = PathBuf::from("/my/vault");
+        let index = VaultIndex {
+            version: 1,
+            blobs_dir: Some("blobs".to_string()),
+            entries: HashMap::new(),
+        };
+        let result = VaultHandle::resolve_blobs_dir(&root, &index);
+        assert_eq!(result, PathBuf::from("/my/vault/blobs"));
+    }
+
+    // ── blob_path ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn blob_path_joins_correctly() {
+        let handle = make_handle_with_entries(&[]);
+        let p = handle.blob_path("abc-123");
+        assert_eq!(p, PathBuf::from("/tmp/vault/abc-123"));
+    }
+
+    // ── subfolders ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn subfolders_at_root() {
+        let handle = make_handle_with_entries(&[
+            ("u1", "a.txt",   ""),
+            ("u2", "b.jpg",   "photos"),
+            ("u3", "c.jpg",   "photos/summer"),
+            ("u4", "d.pdf",   "documents"),
+        ]);
+        let mut subs = handle.subfolders("");
+        subs.sort();
+        assert_eq!(subs, vec!["documents", "photos"]);
+    }
+
+    #[test]
+    fn subfolders_nested() {
+        let handle = make_handle_with_entries(&[
+            ("u1", "a.jpg", "photos/summer"),
+            ("u2", "b.jpg", "photos/winter"),
+            ("u3", "c.jpg", "photos/winter/snow"),
+        ]);
+        let mut subs = handle.subfolders("photos");
+        subs.sort();
+        assert_eq!(subs, vec!["summer", "winter"]);
+    }
+
+    #[test]
+    fn subfolders_leaf_is_empty() {
+        let handle = make_handle_with_entries(&[
+            ("u1", "a.jpg", "photos/summer"),
+        ]);
+        assert!(handle.subfolders("photos/summer").is_empty());
+    }
+
+    #[test]
+    fn subfolders_no_false_prefix_match() {
+        // "photosother" must NOT appear as a subfolder of "photos"
+        let handle = make_handle_with_entries(&[
+            ("u1", "a.jpg", "photosother"),
+        ]);
+        assert!(handle.subfolders("photos").is_empty());
+    }
+
+    #[test]
+    fn subfolders_empty_vault() {
+        let handle = make_handle_with_entries(&[]);
+        assert!(handle.subfolders("").is_empty());
+    }
+
+    // ── entries_in_path ──────────────────────────────────────────────────────
+
+    #[test]
+    fn entries_in_path_root_only() {
+        let handle = make_handle_with_entries(&[
+            ("u1", "b.txt", ""),
+            ("u2", "a.txt", ""),
+            ("u3", "c.jpg", "photos"),
+        ]);
+        let entries = handle.entries_in_path("");
+        assert_eq!(entries.len(), 2);
+        // Sorted alphabetically by name
+        assert_eq!(entries[0].1.name, "a.txt");
+        assert_eq!(entries[1].1.name, "b.txt");
+    }
+
+    #[test]
+    fn entries_in_path_nested() {
+        let handle = make_handle_with_entries(&[
+            ("u1", "img.jpg", "photos/summer"),
+            ("u2", "doc.pdf", ""),
+        ]);
+        let entries = handle.entries_in_path("photos/summer");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.name, "img.jpg");
+    }
+
+    #[test]
+    fn entries_in_path_no_partial_match() {
+        // "photos/summer" should not appear under "photos"
+        let handle = make_handle_with_entries(&[
+            ("u1", "img.jpg", "photos/summer"),
+        ]);
+        assert!(handle.entries_in_path("photos").is_empty());
+    }
+
+    #[test]
+    fn entries_in_path_empty() {
+        let handle = make_handle_with_entries(&[]);
+        assert!(handle.entries_in_path("").is_empty());
+    }
+}

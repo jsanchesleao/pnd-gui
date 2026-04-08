@@ -18,6 +18,34 @@ pub(super) fn is_media_ext(ext: &str) -> bool {
     )
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn video_extensions_recognised() {
+        for ext in &["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "ts", "ogv"] {
+            assert!(is_media_ext(ext), "{ext} should be a media ext");
+        }
+    }
+
+    #[test]
+    fn audio_extensions_recognised() {
+        for ext in &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus", "wma"] {
+            assert!(is_media_ext(ext), "{ext} should be a media ext");
+        }
+    }
+
+    #[test]
+    fn non_media_extensions_rejected() {
+        for ext in &["jpg", "png", "txt", "pdf", "zip", "rs", "lock", ""] {
+            assert!(!is_media_ext(ext), "{ext} should not be a media ext");
+        }
+    }
+}
+
 /// Write `bytes` to a temp file and play it with mpv, blocking until playback ends.
 ///
 /// Ratatui is suspended for the duration so mpv can own the terminal.

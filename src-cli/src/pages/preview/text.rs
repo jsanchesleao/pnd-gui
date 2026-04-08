@@ -196,3 +196,55 @@ fn show_with_ratatui(
 fn size_visible(terminal: &Terminal<CrosstermBackend<io::Stdout>>) -> u16 {
     terminal.size().map(|s| s.height.saturating_sub(4)).unwrap_or(20)
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_text_ext ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn plain_text_formats_recognised() {
+        for ext in &["txt", "md", "markdown", "log", "csv", "diff", "patch"] {
+            assert!(is_text_ext(ext), "{ext} should be a text ext");
+        }
+    }
+
+    #[test]
+    fn data_formats_recognised() {
+        for ext in &["json", "jsonc", "json5", "yml", "yaml", "toml", "ini", "cfg", "conf", "env"] {
+            assert!(is_text_ext(ext), "{ext} should be a text ext");
+        }
+    }
+
+    #[test]
+    fn markup_formats_recognised() {
+        for ext in &["xml", "html", "htm", "svg"] {
+            assert!(is_text_ext(ext), "{ext} should be a text ext");
+        }
+    }
+
+    #[test]
+    fn code_extensions_recognised() {
+        for ext in &[
+            "rs", "py", "js", "ts", "jsx", "tsx",
+            "sh", "bash", "zsh", "fish",
+            "css", "scss", "less",
+            "sql", "graphql", "gql",
+            "c", "cpp", "h", "hpp",
+            "java", "go", "rb", "php", "swift", "kt", "lua",
+        ] {
+            assert!(is_text_ext(ext), "{ext} should be a text ext");
+        }
+    }
+
+    #[test]
+    fn binary_and_media_extensions_rejected() {
+        for ext in &["jpg", "jpeg", "png", "gif", "mp4", "mkv", "mp3",
+                     "zip", "gz", "tar", "pdf", "lock", "exe", "bin", ""] {
+            assert!(!is_text_ext(ext), "{ext} should not be a text ext");
+        }
+    }
+}

@@ -109,6 +109,159 @@ pub fn encrypt_file(
     Ok(())
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── derive_key ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn derive_key_is_deterministic() {
+        let salt = [1u8; 16];
+        let k1 = derive_key("password", &salt);
+        let k2 = derive_key("password", &salt);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn derive_key_differs_by_salt() {
+        let k1 = derive_key("password", &[0u8; 16]);
+        let k2 = derive_key("password", &[1u8; 16]);
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn derive_key_differs_by_password() {
+        let salt = [42u8; 16];
+        let k1 = derive_key("abc", &salt);
+        let k2 = derive_key("xyz", &salt);
+        assert_ne!(k1, k2);
+    }
+
+    // ── encrypt_blob / decrypt_blob ─────────────────────────────────────────
+
+    #[test]
+    fn blob_roundtrip() {
+        let plain = b"hello vault";
+        let blob = encrypt_blob(plain, "s3cr3t");
+        let recovered = decrypt_blob(&blob, "s3cr3t").expect("decryption should succeed");
+        assert_eq!(recovered, plain);
+    }
+
+    #[test]
+    fn blob_wrong_password_returns_none() {
+        let blob = encrypt_blob(b"data", "correct");
+        assert!(decrypt_blob(&blob, "wrong").is_none());
+    }
+
+    #[test]
+    fn blob_too_short_returns_none() {
+        // anything shorter than SALT_SIZE + IV_SIZE + 16 (GCM tag) is invalid
+        let short = vec![0u8; 10];
+        assert!(decrypt_blob(&short, "pw").is_none());
+    }
+
+    #[test]
+    fn blob_empty_plaintext_roundtrip() {
+        let blob = encrypt_blob(&[], "pw");
+        let recovered = decrypt_blob(&blob, "pw").expect("should handle empty plaintext");
+        assert!(recovered.is_empty());
+    }
+
+    #[test]
+    fn blob_each_encrypt_produces_unique_ciphertext() {
+        // Two calls with the same inputs must produce different output (random salt + IV)
+        let b1 = encrypt_blob(b"same", "pw");
+        let b2 = encrypt_blob(b"same", "pw");
+        assert_ne!(b1, b2);
+    }
+
+    // ── encrypt_file / decrypt_file ─────────────────────────────────────────
+
+    fn roundtrip(plaintext: &[u8], password: &str) -> Vec<u8> {
+        let mut ciphertext = Vec::new();
+        encrypt_file(
+            &mut std::io::Cursor::new(plaintext),
+            &mut ciphertext,
+            password,
+            &mut |_| {},
+        ).unwrap();
+
+        let mut recovered = Vec::new();
+        let ok = decrypt_file(
+            &mut std::io::Cursor::new(&ciphertext),
+            &mut recovered,
+            password,
+            &mut |_| {},
+        ).unwrap();
+        assert!(ok, "decrypt_file should return true on success");
+        recovered
+    }
+
+    #[test]
+    fn file_roundtrip_small() {
+        let plain = b"The quick brown fox";
+        assert_eq!(roundtrip(plain, "pw"), plain);
+    }
+
+    #[test]
+    fn file_roundtrip_empty() {
+        assert_eq!(roundtrip(&[], "pw"), &[] as &[u8]);
+    }
+
+    #[test]
+    fn file_roundtrip_binary() {
+        let plain: Vec<u8> = (0u8..=255).collect();
+        assert_eq!(roundtrip(&plain, "pw"), plain);
+    }
+
+    #[test]
+    fn file_wrong_password_returns_false() {
+        let mut ciphertext = Vec::new();
+        encrypt_file(
+            &mut std::io::Cursor::new(b"secret"),
+            &mut ciphertext,
+            "correct",
+            &mut |_| {},
+        ).unwrap();
+
+        let mut out = Vec::new();
+        let ok = decrypt_file(
+            &mut std::io::Cursor::new(&ciphertext),
+            &mut out,
+            "wrong",
+            &mut |_| {},
+        ).unwrap();
+        assert!(!ok);
+    }
+
+    #[test]
+    fn file_progress_callback_reports_bytes() {
+        let plain = vec![42u8; 1024];
+        let mut ciphertext = Vec::new();
+        let mut total_enc = 0usize;
+        encrypt_file(
+            &mut std::io::Cursor::new(&plain),
+            &mut ciphertext,
+            "pw",
+            &mut |n| total_enc += n,
+        ).unwrap();
+        assert_eq!(total_enc, plain.len());
+
+        let mut total_dec = 0usize;
+        let mut out = Vec::new();
+        decrypt_file(
+            &mut std::io::Cursor::new(&ciphertext),
+            &mut out,
+            "pw",
+            &mut |n| total_dec += n,
+        ).unwrap();
+        assert_eq!(total_dec, plain.len());
+    }
+}
+
 /// Decrypt a pnd-gui single-file `.lock` stream.
 ///
 /// Returns `Ok(true)` on success, `Ok(false)` if the password is wrong or the
