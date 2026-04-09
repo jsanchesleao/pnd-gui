@@ -36,7 +36,7 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
 
 fn handle_vault_menu(app: &mut App, code: KeyCode) {
     match code {
-        KeyCode::Esc | KeyCode::Char('h') => { app.screen = Screen::Menu; }
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => { app.screen = Screen::Menu; }
         KeyCode::Up | KeyCode::Char('k') => app.vault.menu_up(),
         KeyCode::Down | KeyCode::Char('j') => app.vault.menu_down(),
         KeyCode::Enter | KeyCode::Char('l') => app.vault.menu_select(),
@@ -190,7 +190,7 @@ fn handle_browse_tree(app: &mut App, code: KeyCode) {
         KeyCode::Char('h') | KeyCode::Backspace | KeyCode::Left => {
             navigate_up_or_lock(app);
         }
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             navigate_up_or_lock(app);
         }
         KeyCode::Char('s') => app.vault.save(),
@@ -223,7 +223,7 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
                 }
             }
         }
-        KeyCode::Char('h') | KeyCode::Backspace | KeyCode::Left | KeyCode::Esc => {
+        KeyCode::Char('h') | KeyCode::Char('q') | KeyCode::Backspace | KeyCode::Left | KeyCode::Esc => {
             navigate_up_or_lock(app);
         }
         KeyCode::Char(' ') => {
