@@ -763,11 +763,31 @@ impl VaultState {
             _ => return,
         };
         let browse = match &mut self.browse { Some(b) => b, None => return };
+
+        // Collect all blob UUIDs (parts + thumbnails) before removing index entries.
+        let mut blob_paths: Vec<std::path::PathBuf> = Vec::new();
+        for uuid in &uuids {
+            if let Some(entry) = browse.handle.index.entries.get(uuid) {
+                for part in &entry.parts {
+                    blob_paths.push(browse.handle.blob_path(&part.uuid));
+                }
+                if let Some(thumb_uuid) = &entry.thumbnail_uuid {
+                    blob_paths.push(browse.handle.blob_path(thumb_uuid));
+                }
+            }
+        }
+
         for uuid in &uuids {
             browse.handle.index.entries.remove(uuid);
             browse.selected_uuids.remove(uuid);
             browse.clipboard.retain(|u| u != uuid);
         }
+
+        // Delete blob files from disk (best-effort — ignore individual failures).
+        for path in &blob_paths {
+            let _ = std::fs::remove_file(path);
+        }
+
         let n = uuids.len();
         let msg = match super::crypto::save_vault(&browse.handle) {
             Ok(()) => { browse.dirty = false; format!("Deleted {n} item(s) — saved") }

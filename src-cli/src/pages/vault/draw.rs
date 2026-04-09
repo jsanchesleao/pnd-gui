@@ -722,14 +722,14 @@ fn draw_confirm_delete_overlay(frame: &mut Frame, count: usize) {
     let noun = if count == 1 { "item" } else { "items" };
     frame.render_widget(
         Paragraph::new(Span::styled(
-            format!("Delete {count} {noun}? This removes them from the index."),
+            format!("Delete {count} {noun}? This cannot be undone."),
             Style::default().fg(Color::White),
         )).alignment(Alignment::Center),
         rows[0],
     );
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "Blob files are NOT deleted from disk.",
+            "Index entry and blob files will be removed from disk.",
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         )).alignment(Alignment::Center),
         rows[1],
