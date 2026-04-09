@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::time::Instant;
 
 use super::types::{VaultEntry, VaultHandle};
 
@@ -57,6 +58,8 @@ pub(crate) struct BrowseState {
     pub(crate) dirty: bool,
     /// Transient one-line feedback shown in the hint bar.
     pub(crate) status_msg: Option<String>,
+    /// When `status_msg` was set (for auto-clearing after a timeout).
+    pub(crate) status_msg_at: Option<Instant>,
     /// Folders that were created in this session but are still empty (not yet
     /// derivable from the index). Merged into `all_folders` during `refresh`.
     pub(crate) extra_folders: Vec<String>,
@@ -77,10 +80,32 @@ impl BrowseState {
             clipboard: Vec::new(),
             dirty: false,
             status_msg: None,
+            status_msg_at: None,
             extra_folders: Vec::new(),
         };
         s.refresh();
         s
+    }
+
+    /// Set a transient status message and record the current time for auto-clearing.
+    pub(crate) fn set_status(&mut self, msg: String) {
+        self.status_msg = Some(msg);
+        self.status_msg_at = Some(Instant::now());
+    }
+
+    /// Clear the status message if it has been visible for more than `secs` seconds.
+    pub(crate) fn tick_status(&mut self, secs: u64) {
+        if let Some(at) = self.status_msg_at {
+            if at.elapsed().as_secs() >= secs {
+                self.status_msg = None;
+                self.status_msg_at = None;
+            }
+        }
+    }
+
+    /// True while a status message is pending (drives the event-loop poll timeout).
+    pub(crate) fn has_pending_status(&self) -> bool {
+        self.status_msg_at.is_some()
     }
 
     /// Recompute derived lists from the index. Clamps cursors to valid ranges.
@@ -532,7 +557,7 @@ impl VaultState {
             .any(|(u, e)| u != uuid.as_str() && e.name == new_name);
 
         if conflict {
-            browse.status_msg = Some(format!("'{new_name}' already exists in this folder"));
+            browse.set_status(format!("'{new_name}' already exists in this folder"));
         } else if !new_name.is_empty() {
             if let Some(entry) = browse.handle.index.entries.get_mut(&uuid) {
                 entry.name = new_name;
@@ -568,7 +593,7 @@ impl VaultState {
             Ok(()) => { browse.dirty = false; format!("Deleted {n} item(s) — saved") }
             Err(e) => { browse.dirty = true;  format!("Deleted {n} item(s) — save failed: {e}") }
         };
-        browse.status_msg = Some(msg);
+        browse.set_status(msg);
         browse.refresh();
         self.phase = Phase::Browse;
     }
@@ -580,7 +605,7 @@ impl VaultState {
         if sel.is_empty() { return; }
         browse.clipboard = sel;
         browse.selected_uuids.clear();
-        browse.status_msg = Some(format!("{} item(s) cut — press p to paste", browse.clipboard.len()));
+        browse.set_status(format!("{} item(s) cut — press p to paste", browse.clipboard.len()));
     }
 
     /// Move clipboard items to the current path and auto-save.
@@ -588,7 +613,7 @@ impl VaultState {
         let browse = match &mut self.browse { Some(b) => b, None => return };
         let uuids = browse.clipboard.clone();
         if uuids.is_empty() {
-            browse.status_msg = Some("Nothing in clipboard".to_string());
+            browse.set_status("Nothing in clipboard".to_string());
             return;
         }
         let dest = browse.current_path.clone();
@@ -628,7 +653,7 @@ impl VaultState {
             Ok(()) => { browse.dirty = false; format!("Moved {n} item(s) — saved") }
             Err(e) => { browse.dirty = true;  format!("Moved {n} item(s) — save failed: {e}") }
         };
-        browse.status_msg = Some(msg);
+        browse.set_status(msg);
         browse.refresh();
     }
 
@@ -691,7 +716,7 @@ impl VaultState {
             Ok(()) => { browse.dirty = false; format!("Moved {n} item(s) — saved") }
             Err(e) => { browse.dirty = true;  format!("Moved {n} item(s) — save failed: {e}") }
         };
-        browse.status_msg = Some(msg);
+        browse.set_status(msg);
         browse.refresh();
         self.phase = Phase::Browse;
     }
@@ -703,7 +728,7 @@ impl VaultState {
             Ok(()) => { browse.dirty = false; "Vault saved.".to_string() }
             Err(e) => format!("Save failed: {e}"),
         };
-        browse.status_msg = Some(msg);
+        browse.set_status(msg);
     }
 
     // ── Create folder ────────────────────────────────────────────────────────
@@ -756,7 +781,7 @@ impl VaultState {
 
         browse.extra_folders.push(full_path.clone());
         browse.extra_folders.sort();
-        browse.status_msg = Some(format!("Folder '{name}' created — move files here with m or x/p"));
+        browse.set_status(format!("Folder '{name}' created — move files here with m or x/p"));
         browse.refresh();
         self.phase = Phase::Browse;
     }
@@ -827,7 +852,7 @@ impl VaultState {
                         Ok(()) => { browse.dirty = false; format!("Added {n} file(s) — saved") }
                         Err(e) => { browse.dirty = true;  format!("Added {n} file(s) — save failed: {e}") }
                     };
-                    browse.status_msg = Some(msg);
+                    browse.set_status(msg);
                     browse.refresh();
                     self.phase = Phase::Browse;
                     break;
@@ -835,7 +860,7 @@ impl VaultState {
                 Ok(AddWorkerMsg::Failed(msg)) => {
                     self.add_rx = None;
                     if let Some(browse) = &mut self.browse {
-                        browse.status_msg = Some(msg);
+                        browse.set_status(msg);
                     }
                     self.phase = Phase::Browse;
                     break;
@@ -843,6 +868,19 @@ impl VaultState {
                 Err(_) => break,
             }
         }
+    }
+
+    /// Clear any status message that has been showing for ≥ `secs` seconds.
+    /// Called each event-loop tick so the hint bar reappears automatically.
+    pub(crate) fn tick(&mut self, secs: u64) {
+        if let Some(b) = &mut self.browse {
+            b.tick_status(secs);
+        }
+    }
+
+    /// True if a timed status message is currently pending.
+    pub(crate) fn has_pending_status(&self) -> bool {
+        self.browse.as_ref().map(|b| b.has_pending_status()).unwrap_or(false)
     }
 
     /// Return to the vault submenu and discard the open vault.

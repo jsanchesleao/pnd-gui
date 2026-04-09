@@ -175,6 +175,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         app.preview.poll_progress();
         app.vault.poll_progress();
         app.vault.poll_add_progress();
+        // Clear vault status messages that have been visible for ≥ 3 seconds.
+        app.vault.tick(3);
 
         // Render image on the main thread if decryption just completed.
         if let pages::preview::PreviewPhase::PendingRender { .. } = app.preview.phase {
@@ -203,7 +205,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         let running = matches!(app.enc_dec.status, OpStatus::Running(_))
             || matches!(app.preview.phase, pages::preview::PreviewPhase::Decrypting(_))
             || app.vault.is_opening()
-            || app.vault.is_adding();
+            || app.vault.is_adding()
+            || app.vault.has_pending_status();
         let has_event = if running {
             event::poll(Duration::from_millis(50))?
         } else {
