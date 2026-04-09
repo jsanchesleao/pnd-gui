@@ -57,6 +57,9 @@ pub(crate) struct BrowseState {
     pub(crate) dirty: bool,
     /// Transient one-line feedback shown in the hint bar.
     pub(crate) status_msg: Option<String>,
+    /// Folders that were created in this session but are still empty (not yet
+    /// derivable from the index). Merged into `all_folders` during `refresh`.
+    pub(crate) extra_folders: Vec<String>,
 }
 
 impl BrowseState {
@@ -74,6 +77,7 @@ impl BrowseState {
             clipboard: Vec::new(),
             dirty: false,
             status_msg: None,
+            extra_folders: Vec::new(),
         };
         s.refresh();
         s
@@ -90,8 +94,31 @@ impl BrowseState {
             .map(|(uuid, _)| uuid.to_string())
             .collect();
 
-        self.folders = self.handle.subfolders(&cp);
-        self.all_folders = collect_all_folders(&self.handle);
+        // Recompute folder lists, merging in any session-only extra folders.
+        let mut all = collect_all_folders(&self.handle);
+        for ef in &self.extra_folders {
+            if !all.contains(ef) {
+                all.push(ef.clone());
+            }
+        }
+        all.sort();
+        self.all_folders = all;
+
+        // Derive immediate subfolders of current_path from all_folders.
+        let prefix = if cp.is_empty() { String::new() } else { format!("{cp}/") };
+        let mut seen_subs: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for path in &self.all_folders {
+            if path.is_empty() { continue; }
+            if !prefix.is_empty() && !path.starts_with(&prefix) { continue; }
+            let rest = if prefix.is_empty() { path.as_str() } else { &path[prefix.len()..] };
+            let seg = rest.split('/').next().unwrap_or("");
+            if !seg.is_empty() { seen_subs.insert(seg.to_string()); }
+        }
+        self.folders = {
+            let mut v: Vec<String> = seen_subs.into_iter().collect();
+            v.sort();
+            v
+        };
 
         let list_len = self.folders.len() + self.file_uuids.len();
         if list_len == 0 {
@@ -257,6 +284,8 @@ pub(crate) enum Phase {
     Move { uuids: Vec<String>, tree_cursor: usize },
     /// Background file-add operation in progress (overlay on top of Browse).
     Adding { total: usize, done: usize, current_file: String },
+    /// New-folder dialog (overlay on top of Browse).
+    NewFolder { parent: String, input: String, error: Option<String> },
 }
 
 // ── Top-level state ────────────────────────────────────────────────────────
@@ -675,6 +704,61 @@ impl VaultState {
             Err(e) => format!("Save failed: {e}"),
         };
         browse.status_msg = Some(msg);
+    }
+
+    // ── Create folder ────────────────────────────────────────────────────────
+
+    /// Open the new-folder dialog as a child of the current path.
+    pub(crate) fn enter_new_folder(&mut self) {
+        let parent = match &self.browse {
+            Some(b) => b.current_path.clone(),
+            None => return,
+        };
+        self.phase = Phase::NewFolder { parent, input: String::new(), error: None };
+    }
+
+    /// Validate the typed name and append the new folder to `extra_folders`.
+    pub(crate) fn confirm_new_folder(&mut self) {
+        let (parent, input) = match &self.phase {
+            Phase::NewFolder { parent, input, .. } => (parent.clone(), input.clone()),
+            _ => return,
+        };
+
+        let name = input.trim().to_string();
+
+        if name.is_empty() {
+            if let Phase::NewFolder { error, .. } = &mut self.phase {
+                *error = Some("Folder name cannot be empty.".into());
+            }
+            return;
+        }
+        if name.contains('/') {
+            if let Phase::NewFolder { error, .. } = &mut self.phase {
+                *error = Some("Folder name cannot contain '/'.".into());
+            }
+            return;
+        }
+
+        let full_path = if parent.is_empty() {
+            name.clone()
+        } else {
+            format!("{parent}/{name}")
+        };
+
+        let browse = match &mut self.browse { Some(b) => b, None => { self.phase = Phase::Browse; return; } };
+
+        if browse.all_folders.contains(&full_path) {
+            if let Phase::NewFolder { error, .. } = &mut self.phase {
+                *error = Some(format!("A folder named '{name}' already exists here."));
+            }
+            return;
+        }
+
+        browse.extra_folders.push(full_path.clone());
+        browse.extra_folders.sort();
+        browse.status_msg = Some(format!("Folder '{name}' created — move files here with m or x/p"));
+        browse.refresh();
+        self.phase = Phase::Browse;
     }
 
     // ── Add files ───────────────────────────────────────────────────────────

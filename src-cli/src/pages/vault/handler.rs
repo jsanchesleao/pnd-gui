@@ -19,6 +19,7 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
         Phase::Rename { .. }          => handle_rename(app, code),
         Phase::ConfirmDelete { .. }   => handle_confirm_delete(app, code),
         Phase::Move { .. }            => handle_move(app, code),
+        Phase::NewFolder { .. }       => handle_new_folder(app, code),
         Phase::Opening(_)             => {} // blocked above
         Phase::Adding { .. }          => {} // blocked above
     }
@@ -230,6 +231,7 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
             let start = std::env::current_dir().ok();
             app.open_file_browser_multi(start.as_deref(), FileBrowserTarget::VaultAddFiles);
         }
+        KeyCode::Char('n') => app.vault.enter_new_folder(),
         KeyCode::Char('r') => app.vault.enter_rename(),
         KeyCode::Char('d') => app.vault.enter_delete(),
         KeyCode::Char('x') => app.vault.cut_selection(),
@@ -250,6 +252,28 @@ fn navigate_up_or_lock(app: &mut App) {
         app.vault.lock();
     } else if let Some(b) = &mut app.vault.browse {
         b.navigate_up();
+    }
+}
+
+// ── NewFolder overlay ──────────────────────────────────────────────────────
+
+fn handle_new_folder(app: &mut App, code: KeyCode) {
+    match code {
+        KeyCode::Esc => { app.vault.phase = Phase::Browse; }
+        KeyCode::Enter => app.vault.confirm_new_folder(),
+        KeyCode::Char(c) => {
+            if let Phase::NewFolder { input, error, .. } = &mut app.vault.phase {
+                input.push(c);
+                *error = None;
+            }
+        }
+        KeyCode::Backspace => {
+            if let Phase::NewFolder { input, error, .. } = &mut app.vault.phase {
+                input.pop();
+                *error = None;
+            }
+        }
+        _ => {}
     }
 }
 

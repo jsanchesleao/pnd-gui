@@ -60,6 +60,12 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
                 draw_adding_overlay(frame, *total, *done, current_file);
             }
         }
+        Phase::NewFolder { parent, input, error } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+                draw_new_folder_overlay(frame, parent, input, error.as_deref());
+            }
+        }
     }
 }
 
@@ -547,7 +553,7 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
         // Build hint string without format!() owning a temporary
         let _ = clip_hint;
-        ("Tab tree    ↑↓/jk navigate    Enter open    Space select    i add    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
+        ("Tab tree    ↑↓/jk navigate    Enter open    Space select    i add    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
     let line = Span::styled(text, Style::default().fg(color));
@@ -766,6 +772,64 @@ fn draw_move_overlay(frame: &mut Frame, browse: &BrowseState, tree_cursor: usize
         )).alignment(Alignment::Center),
         rows[1],
     );
+}
+
+fn draw_new_folder_overlay(frame: &mut Frame, parent: &str, input: &str, error: Option<&str>) {
+    let area = centered_popup(frame.area(), 60, 7);
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " New Folder ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1), // parent path label
+            Constraint::Length(1), // blank
+            Constraint::Length(3), // name input
+            Constraint::Length(1), // error or hint
+        ])
+        .split(inner);
+
+    let parent_label = if parent.is_empty() { "/".to_string() } else { format!("/{parent}/") };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Inside: ", Style::default().fg(DIM)),
+            Span::styled(parent_label, Style::default().fg(Color::White)),
+        ])),
+        rows[0],
+    );
+
+    frame.render_widget(
+        Paragraph::new(format!("{input}|")).block(input_block("Folder name", true)),
+        rows[2],
+    );
+
+    if let Some(err) = error {
+        frame.render_widget(
+            Paragraph::new(Span::styled(err, Style::default().fg(FAILURE))),
+            rows[3],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "Enter confirm    Esc cancel",
+                Style::default().fg(DIM),
+            ))
+            .alignment(Alignment::Center),
+            rows[3],
+        );
+    }
 }
 
 fn draw_adding_overlay(frame: &mut Frame, total: usize, done: usize, current_file: &str) {
