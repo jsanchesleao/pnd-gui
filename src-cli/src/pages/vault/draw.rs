@@ -574,7 +574,7 @@ fn centered_popup(area: Rect, percent_w: u16, height: u16) -> Rect {
 }
 
 fn draw_rename_overlay(frame: &mut Frame, input: &str, original: &str) {
-    let area = centered_popup(frame.area(), 60, 7);
+    let area = centered_popup(frame.area(), 60, 10);
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -621,7 +621,7 @@ fn draw_rename_overlay(frame: &mut Frame, input: &str, original: &str) {
 }
 
 fn draw_confirm_create_dir_overlay(frame: &mut Frame, vault_path: &str) {
-    let area = centered_popup(frame.area(), 62, 7);
+    let area = centered_popup(frame.area(), 62, 8);
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -679,7 +679,7 @@ fn draw_confirm_create_dir_overlay(frame: &mut Frame, vault_path: &str) {
 }
 
 fn draw_confirm_delete_overlay(frame: &mut Frame, count: usize) {
-    let area = centered_popup(frame.area(), 50, 6);
+    let area = centered_popup(frame.area(), 50, 7);
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -775,7 +775,7 @@ fn draw_move_overlay(frame: &mut Frame, browse: &BrowseState, tree_cursor: usize
 }
 
 fn draw_new_folder_overlay(frame: &mut Frame, parent: &str, input: &str, error: Option<&str>) {
-    let area = centered_popup(frame.area(), 60, 7);
+    let area = centered_popup(frame.area(), 60, 10);
     frame.render_widget(Clear, area);
 
     let block = Block::default()
@@ -833,7 +833,7 @@ fn draw_new_folder_overlay(frame: &mut Frame, parent: &str, input: &str, error: 
 }
 
 fn draw_adding_overlay(frame: &mut Frame, total: usize, done: usize, current_file: &str) {
-    let area = centered_popup(frame.area(), 60, 7);
+    let area = centered_popup(frame.area(), 60, 8);
     frame.render_widget(Clear, area);
 
     let block = Block::default()
