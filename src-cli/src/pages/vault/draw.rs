@@ -1,36 +1,44 @@
 //! Draw functions for the Vault page.
 
+#[path = "draw/util.rs"]
+mod util;
+
+#[path = "draw/forms.rs"]
+mod forms;
+
+#[path = "draw/overlays.rs"]
+mod overlays;
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, ListState, Paragraph},
+    text::Span,
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::{ACCENT, DIM, FAILURE, SUCCESS};
-use crate::pages::widgets::{input_block, outer_block, tail_fit};
-use crate::yazi::yazi_available;
+use crate::{ACCENT, DIM};
 use super::state::{BrowseState, PanelFocus, Phase, VaultState};
+use util::human_size;
 
 pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
     match &state.phase {
-        Phase::VaultMenu { cursor } => draw_vault_menu(frame, *cursor),
+        Phase::VaultMenu { cursor } => forms::draw_vault_menu(frame, *cursor),
         Phase::Locked { vault_path, password, focus, path_edit_mode, error } => {
-            draw_locked(frame, vault_path, password, *focus, *path_edit_mode, error.as_deref(), false)
+            forms::draw_locked(frame, vault_path, password, *focus, *path_edit_mode, error.as_deref(), false)
         }
         Phase::Creating { vault_path, blobs_dir, password, focus, path_edit_mode, error } => {
-            draw_creating(frame, vault_path, blobs_dir, password, *focus, *path_edit_mode, error.as_deref())
+            forms::draw_creating(frame, vault_path, blobs_dir, password, *focus, *path_edit_mode, error.as_deref())
         }
         Phase::ConfirmCreateDir { vault_path, .. } => {
             // Show the creating form dimmed behind the overlay.
-            draw_creating(frame, vault_path, "", "", 0, false, None);
-            draw_confirm_create_dir_overlay(frame, vault_path);
+            forms::draw_creating(frame, vault_path, "", "", 0, false, None);
+            overlays::draw_confirm_create_dir_overlay(frame, vault_path);
         }
         Phase::Opening(pct) => {
-            draw_locked(frame, "", "", 1, false, None, true);
+            forms::draw_locked(frame, "", "", 1, false, None, true);
             // Re-draw the progress bar on top of the locked form
-            draw_opening(frame, *pct);
+            forms::draw_opening(frame, *pct);
         }
         Phase::Browse => {
             if let Some(browse) = &state.browse {
@@ -40,37 +48,37 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
         Phase::Rename { uuid, input } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_rename_overlay(frame, input, browse.entry(uuid).map(|e| e.name.as_str()).unwrap_or(""));
+                overlays::draw_rename_overlay(frame, input, browse.entry(uuid).map(|e| e.name.as_str()).unwrap_or(""));
             }
         }
         Phase::ConfirmDelete { uuids } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_confirm_delete_overlay(frame, uuids.len());
+                overlays::draw_confirm_delete_overlay(frame, uuids.len());
             }
         }
         Phase::Move { uuids, tree_cursor } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_move_overlay(frame, browse, *tree_cursor, uuids.len());
+                overlays::draw_move_overlay(frame, browse, *tree_cursor, uuids.len());
             }
         }
         Phase::Adding { total, done, current_file } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_adding_overlay(frame, *total, *done, current_file);
+                overlays::draw_adding_overlay(frame, *total, *done, current_file);
             }
         }
         Phase::NewFolder { parent, input, error } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_new_folder_overlay(frame, parent, input, error.as_deref());
+                overlays::draw_new_folder_overlay(frame, parent, input, error.as_deref());
             }
         }
         Phase::Previewing { filename } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_previewing_overlay(frame, filename);
+                overlays::draw_previewing_overlay(frame, filename);
             }
         }
         // PreviewReady is transient: main loop calls render_vault_preview before draw,
@@ -83,13 +91,13 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
         Phase::Exporting { total, done, current_file } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_exporting_overlay(frame, *total, *done, current_file);
+                overlays::draw_exporting_overlay(frame, *total, *done, current_file);
             }
         }
         Phase::LoadingGallery { folder, done, total } => {
             if let Some(browse) = &state.browse {
                 draw_browse(frame, browse, None);
-                draw_loading_gallery_overlay(frame, folder, *done, *total);
+                overlays::draw_loading_gallery_overlay(frame, folder, *done, *total);
             }
         }
         // GalleryReady is transient: main loop calls render_vault_gallery before draw,
@@ -100,380 +108,6 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
             }
         }
     }
-}
-
-// ── Vault submenu ──────────────────────────────────────────────────────────
-
-fn draw_vault_menu(frame: &mut Frame, cursor: usize) {
-    let area = frame.area();
-    frame.render_widget(outer_block("Vault"), area);
-
-    let c = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Length(1), // [0] description
-            Constraint::Length(2), // [1] spacer
-            Constraint::Length(1), // [2] item 0 — Open Vault
-            Constraint::Length(1), // [3] item 0 description
-            Constraint::Length(1), // [4] spacer
-            Constraint::Length(1), // [5] item 1 — New Vault
-            Constraint::Length(1), // [6] item 1 description
-            Constraint::Min(0),    // [7] filler
-            Constraint::Length(1), // [8] hint
-        ])
-        .split(area);
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Select an action:",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        )),
-        c[0],
-    );
-
-    let items: &[(&str, &str)] = &[
-        ("Open Vault",  "Unlock and browse an existing encrypted vault"),
-        ("New Vault",   "Create a new empty vault in a folder you choose"),
-    ];
-
-    for (i, (label, desc)) in items.iter().enumerate() {
-        let (row_label, row_desc) = if i == 0 { (c[2], c[3]) } else { (c[5], c[6]) };
-        let selected = cursor == i;
-
-        let prefix = if selected { "▶ " } else { "  " };
-        let label_style = if selected {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        let desc_style = if selected {
-            Style::default().fg(SUCCESS)
-        } else {
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
-        };
-
-        frame.render_widget(
-            Paragraph::new(Span::styled(format!("{prefix}{label}"), label_style)),
-            row_label,
-        );
-        frame.render_widget(
-            Paragraph::new(Span::styled(format!("    {desc}"), desc_style)),
-            row_desc,
-        );
-    }
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "↑↓ / jk  navigate    Enter  select    Esc/h  back to main menu",
-            Style::default().fg(DIM),
-        ))
-        .alignment(Alignment::Center),
-        c[8],
-    );
-}
-
-// ── Locked / Opening ───────────────────────────────────────────────────────
-
-fn draw_locked(
-    frame: &mut Frame,
-    vault_path: &str,
-    password: &str,
-    focus: usize,
-    path_edit_mode: bool,
-    error: Option<&str>,
-    is_opening: bool,
-) {
-    let area = frame.area();
-    frame.render_widget(outer_block("Vault"), area);
-
-    let c = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Length(1), // [0] info
-            Constraint::Length(1), // [1] blank
-            Constraint::Length(3), // [2] vault path
-            Constraint::Length(1), // [3] path hint
-            Constraint::Length(1), // [4] blank
-            Constraint::Length(3), // [5] password
-            Constraint::Length(1), // [6] blank
-            Constraint::Length(1), // [7] status label
-            Constraint::Length(1), // [8] status / error
-            Constraint::Min(0),    // [9] filler
-            Constraint::Length(1), // [10] hint bar
-        ])
-        .split(area);
-
-    // [0] info
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "Open an encrypted vault folder",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))),
-        c[0],
-    );
-
-    // [2] vault path
-    let path_focused = focus == 0;
-    let inner_w = c[2].width.saturating_sub(4) as usize;
-    let path_display = if path_focused && path_edit_mode {
-        tail_fit(&format!("{vault_path}|"), inner_w).to_string()
-    } else if vault_path.is_empty() {
-        String::new()
-    } else {
-        tail_fit(vault_path, inner_w).to_string()
-    };
-    let path_label = if path_focused && path_edit_mode {
-        "Vault folder  (editing)"
-    } else {
-        "Vault folder"
-    };
-    let path_paragraph = if vault_path.is_empty() && !path_edit_mode {
-        Paragraph::new(Span::styled(
-            "(no folder selected)",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))
-    } else {
-        Paragraph::new(path_display.as_str())
-    };
-    frame.render_widget(
-        path_paragraph.block(input_block(path_label, path_focused)),
-        c[2],
-    );
-
-    // [3] path sub-hint (only visible when path field is focused)
-    if path_focused {
-        let hint_spans = if path_edit_mode {
-            vec![
-                Span::styled("  Enter", Style::default().fg(ACCENT)),
-                Span::styled(" confirm    ", Style::default().fg(DIM)),
-                Span::styled("Esc", Style::default().fg(ACCENT)),
-                Span::styled(" cancel edit    ", Style::default().fg(DIM)),
-                Span::styled("Tab", Style::default().fg(ACCENT)),
-                Span::styled(" next field", Style::default().fg(DIM)),
-            ]
-        } else {
-            let mut spans = vec![
-                Span::styled("  t", Style::default().fg(ACCENT)),
-                Span::styled(" type    ", Style::default().fg(DIM)),
-                Span::styled("b", Style::default().fg(ACCENT)),
-                Span::styled(" browser    ", Style::default().fg(DIM)),
-            ];
-            if yazi_available() {
-                spans.push(Span::styled("y", Style::default().fg(ACCENT)));
-                spans.push(Span::styled(" yazi    ", Style::default().fg(DIM)));
-            }
-            spans.push(Span::styled("Enter", Style::default().fg(ACCENT)));
-            spans.push(Span::styled(" auto-pick", Style::default().fg(DIM)));
-            spans
-        };
-        frame.render_widget(Paragraph::new(Line::from(hint_spans)), c[3]);
-    }
-
-    // [5] password
-    let masked = "•".repeat(password.len());
-    let pass_display = if focus == 1 { format!("{masked}|") } else { masked };
-    frame.render_widget(
-        Paragraph::new(pass_display.as_str()).block(input_block("Master password", focus == 1)),
-        c[5],
-    );
-
-    // [7-8] status
-    if !is_opening {
-        if let Some(err) = error {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    format!("✗  {err}"),
-                    Style::default().fg(FAILURE),
-                )),
-                c[8],
-            );
-        }
-    }
-
-    // [10] hint
-    let hint = if path_focused && path_edit_mode {
-        "Esc cancel edit    Tab next field"
-    } else {
-        match focus {
-            0 => "Esc back    Tab next field",
-            _ => "Esc back    Tab previous field    Enter open vault",
-        }
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
-        c[10],
-    );
-}
-
-fn draw_creating(
-    frame: &mut Frame,
-    vault_path: &str,
-    blobs_dir: &str,
-    password: &str,
-    focus: usize,
-    path_edit_mode: bool,
-    error: Option<&str>,
-) {
-    let area = frame.area();
-    frame.render_widget(outer_block("Vault — New"), area);
-
-    let c = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Length(1), // [0] info
-            Constraint::Length(1), // [1] blank
-            Constraint::Length(3), // [2] vault folder
-            Constraint::Length(1), // [3] path hint
-            Constraint::Length(1), // [4] blank
-            Constraint::Length(3), // [5] blobs subfolder
-            Constraint::Length(1), // [6] blobs hint
-            Constraint::Length(1), // [7] blank
-            Constraint::Length(3), // [8] password
-            Constraint::Length(1), // [9] blank
-            Constraint::Length(1), // [10] error
-            Constraint::Min(0),    // [11] filler
-            Constraint::Length(1), // [12] hint bar
-        ])
-        .split(area);
-
-    // [0] info
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "Create a new encrypted vault in an existing folder",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))),
-        c[0],
-    );
-
-    // [2] vault folder
-    let inner_w = c[2].width.saturating_sub(4) as usize;
-    let path_display = if focus == 0 && path_edit_mode {
-        tail_fit(&format!("{vault_path}|"), inner_w).to_string()
-    } else {
-        tail_fit(vault_path, inner_w).to_string()
-    };
-    let path_label = if focus == 0 && path_edit_mode {
-        "Vault folder  (editing)"
-    } else {
-        "Vault folder"
-    };
-    frame.render_widget(
-        Paragraph::new(path_display.as_str()).block(input_block(path_label, focus == 0)),
-        c[2],
-    );
-    if focus == 0 {
-        let hint_spans = if path_edit_mode {
-            vec![
-                Span::styled("  Enter", Style::default().fg(ACCENT)),
-                Span::styled(" confirm    ", Style::default().fg(DIM)),
-                Span::styled("Esc", Style::default().fg(ACCENT)),
-                Span::styled(" cancel edit    ", Style::default().fg(DIM)),
-                Span::styled("Tab", Style::default().fg(ACCENT)),
-                Span::styled(" next field", Style::default().fg(DIM)),
-            ]
-        } else {
-            let mut spans = vec![
-                Span::styled("  t", Style::default().fg(ACCENT)),
-                Span::styled(" type    ", Style::default().fg(DIM)),
-                Span::styled("b", Style::default().fg(ACCENT)),
-                Span::styled(" browser    ", Style::default().fg(DIM)),
-            ];
-            if yazi_available() {
-                spans.push(Span::styled("y", Style::default().fg(ACCENT)));
-                spans.push(Span::styled(" yazi    ", Style::default().fg(DIM)));
-            }
-            spans.push(Span::styled("Enter", Style::default().fg(ACCENT)));
-            spans.push(Span::styled(" auto-pick", Style::default().fg(DIM)));
-            spans
-        };
-        frame.render_widget(Paragraph::new(Line::from(hint_spans)), c[3]);
-    }
-
-    // [5] blobs subfolder
-    let blobs_display = if focus == 1 { format!("{blobs_dir}|") } else { blobs_dir.to_string() };
-    frame.render_widget(
-        Paragraph::new(blobs_display.as_str())
-            .block(input_block("Blobs subfolder (optional)", focus == 1)),
-        c[5],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "  leave empty to store blobs alongside the index",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        )),
-        c[6],
-    );
-
-    // [8] password
-    let masked = "•".repeat(password.len());
-    let pass_display = if focus == 2 { format!("{masked}|") } else { masked };
-    frame.render_widget(
-        Paragraph::new(pass_display.as_str()).block(input_block("Master password", focus == 2)),
-        c[8],
-    );
-
-    // [10] error
-    if let Some(err) = error {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                format!("✗  {err}"),
-                Style::default().fg(FAILURE),
-            )),
-            c[10],
-        );
-    }
-
-    // [12] hint bar
-    let hint = match (focus, path_edit_mode) {
-        (0, true)  => "Enter confirm    Esc cancel edit    Tab next field",
-        (0, false) => "Esc back    Tab next field",
-        (1, _)     => "Esc back    Tab next field    Enter skip to password",
-        _          => "Esc back    Tab previous field    Enter create vault",
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),
-        c[12],
-    );
-}
-
-fn draw_opening(frame: &mut Frame, pct: u8) {
-    let area = frame.area();
-    // Paint over the status rows only
-    let c = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Length(1), // 0
-            Constraint::Length(1), // 1
-            Constraint::Length(3), // 2
-            Constraint::Length(1), // 3
-            Constraint::Length(1), // 4
-            Constraint::Length(3), // 5
-            Constraint::Length(1), // 6
-            Constraint::Length(1), // 7
-            Constraint::Length(1), // 8
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "  Unlocking vault…",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        )),
-        c[7],
-    );
-    frame.render_widget(
-        Gauge::default()
-            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
-            .ratio(pct as f64 / 100.0)
-            .label(format!("{pct}%")),
-        c[8],
-    );
 }
 
 // ── Browse ─────────────────────────────────────────────────────────────────
@@ -601,7 +235,7 @@ fn draw_list_panel(frame: &mut Frame, browse: &BrowseState, area: Rect) {
     let mut items: Vec<ListItem> = Vec::new();
 
     for folder in &browse.folders {
-        items.push(ListItem::new(Line::from(vec![
+        items.push(ListItem::new(ratatui::text::Line::from(vec![
             Span::styled("  [/]  ", Style::default().fg(DIM)),
             Span::styled(format!("{folder}/"), Style::default().fg(Color::Cyan)),
         ])));
@@ -620,7 +254,7 @@ fn draw_list_panel(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         // Right-align size in a fixed width of 9 chars
         let name_and_size = format!("{:<w$}  {:>9}", entry.name, size_str,
             w = (inner.width as usize).saturating_sub(18));
-        items.push(ListItem::new(Line::from(vec![
+        items.push(ListItem::new(ratatui::text::Line::from(vec![
             prefix,
             Span::styled(name_and_size, Style::default().fg(Color::White)),
         ])));
@@ -650,9 +284,6 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
     } else if browse.panel_focus == PanelFocus::Tree {
         ("Tab list    ↑↓/jk navigate    Enter select folder    h/Esc up / back", DIM)
     } else {
-        let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
-        // Build hint string without format!() owning a temporary
-        let _ = clip_hint;
         ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    o sort    O dir    g gallery    G cur gallery    i add    e export    n folder    r rename    d del    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
@@ -661,510 +292,4 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         Paragraph::new(line).alignment(Alignment::Center),
         area,
     );
-}
-
-// ── Overlays ───────────────────────────────────────────────────────────────
-
-fn centered_popup(area: Rect, percent_w: u16, height: u16) -> Rect {
-    let w = (area.width * percent_w / 100).max(20);
-    let h = height.min(area.height);
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + (area.height.saturating_sub(h)) / 2;
-    Rect { x, y, width: w, height: h }
-}
-
-fn draw_rename_overlay(frame: &mut Frame, input: &str, original: &str) {
-    let area = centered_popup(frame.area(), 60, 10);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Rename ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // original name
-            Constraint::Length(1), // blank
-            Constraint::Length(3), // input
-            Constraint::Length(1), // hint
-        ])
-        .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Renaming: ", Style::default().fg(DIM)),
-            Span::styled(original, Style::default().fg(Color::White)),
-        ])),
-        rows[0],
-    );
-    frame.render_widget(
-        Paragraph::new(format!("{input}|")).block(input_block("New name", true)),
-        rows[2],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Enter confirm    Esc cancel",
-            Style::default().fg(DIM),
-        )).alignment(Alignment::Center),
-        rows[3],
-    );
-}
-
-fn draw_confirm_create_dir_overlay(frame: &mut Frame, vault_path: &str) {
-    let area = centered_popup(frame.area(), 62, 8);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Directory not found ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "The following directory does not exist:",
-            Style::default().fg(DIM),
-        ))
-        .alignment(Alignment::Center),
-        rows[0],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(vault_path, Style::default().fg(Color::White)))
-            .alignment(Alignment::Center),
-        rows[1],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Create it and continue?",
-            Style::default().fg(Color::White),
-        ))
-        .alignment(Alignment::Center),
-        rows[2],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "y / Enter  yes    n / Esc  no",
-            Style::default().fg(DIM),
-        ))
-        .alignment(Alignment::Center),
-        rows[3],
-    );
-}
-
-fn draw_confirm_delete_overlay(frame: &mut Frame, count: usize) {
-    let area = centered_popup(frame.area(), 50, 7);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(FAILURE))
-        .title(Span::styled(
-            " Confirm Delete ",
-            Style::default().fg(FAILURE).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Length(1)])
-        .split(inner);
-
-    let noun = if count == 1 { "item" } else { "items" };
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            format!("Delete {count} {noun}? This cannot be undone."),
-            Style::default().fg(Color::White),
-        )).alignment(Alignment::Center),
-        rows[0],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Index entry and blob files will be removed from disk.",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        )).alignment(Alignment::Center),
-        rows[1],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "y / Enter  confirm    n / Esc  cancel",
-            Style::default().fg(DIM),
-        )).alignment(Alignment::Center),
-        rows[2],
-    );
-}
-
-fn draw_move_overlay(frame: &mut Frame, browse: &BrowseState, tree_cursor: usize, count: usize) {
-    let area = centered_popup(frame.area(), 55, 16);
-    frame.render_widget(Clear, area);
-
-    let noun = if count == 1 { "item" } else { "items" };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            format!(" Move {count} {noun} — select destination "),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(inner);
-
-    // Folder list
-    let items: Vec<ListItem> = browse.all_folders.iter().map(|path| {
-        let depth = BrowseState::folder_depth(path);
-        let name = BrowseState::folder_display_name(path);
-        let indent = "  ".repeat(depth);
-        ListItem::new(Span::raw(format!("{indent}{name}")))
-    }).collect();
-
-    let mut list_state = ListState::default();
-    list_state.select(Some(tree_cursor));
-
-    frame.render_stateful_widget(
-        List::new(items)
-            .highlight_style(Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD))
-            .highlight_symbol("▶ "),
-        rows[0],
-        &mut list_state,
-    );
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "↑↓/jk navigate    Enter move here    Esc cancel",
-            Style::default().fg(DIM),
-        )).alignment(Alignment::Center),
-        rows[1],
-    );
-}
-
-fn draw_new_folder_overlay(frame: &mut Frame, parent: &str, input: &str, error: Option<&str>) {
-    let area = centered_popup(frame.area(), 60, 10);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " New Folder ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // parent path label
-            Constraint::Length(1), // blank
-            Constraint::Length(3), // name input
-            Constraint::Length(1), // error or hint
-        ])
-        .split(inner);
-
-    let parent_label = if parent.is_empty() { "/".to_string() } else { format!("/{parent}/") };
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("Inside: ", Style::default().fg(DIM)),
-            Span::styled(parent_label, Style::default().fg(Color::White)),
-        ])),
-        rows[0],
-    );
-
-    frame.render_widget(
-        Paragraph::new(format!("{input}|")).block(input_block("Folder name", true)),
-        rows[2],
-    );
-
-    if let Some(err) = error {
-        frame.render_widget(
-            Paragraph::new(Span::styled(err, Style::default().fg(FAILURE))),
-            rows[3],
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "Enter confirm    Esc cancel",
-                Style::default().fg(DIM),
-            ))
-            .alignment(Alignment::Center),
-            rows[3],
-        );
-    }
-}
-
-fn draw_adding_overlay(frame: &mut Frame, total: usize, done: usize, current_file: &str) {
-    let area = centered_popup(frame.area(), 60, 8);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Adding Files ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // current filename
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // progress gauge
-            Constraint::Length(1), // count label
-        ])
-        .split(inner);
-
-    // Current filename (truncated to fit)
-    let fname_w = rows[0].width as usize;
-    let fname_display = if current_file.len() > fname_w {
-        format!("…{}", &current_file[current_file.len().saturating_sub(fname_w.saturating_sub(1))..])
-    } else {
-        current_file.to_string()
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(fname_display, Style::default().fg(Color::White)))
-            .alignment(Alignment::Center),
-        rows[0],
-    );
-
-    // Progress gauge
-    let ratio = if total == 0 { 0.0 } else { done as f64 / total as f64 };
-    frame.render_widget(
-        Gauge::default()
-            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
-            .ratio(ratio)
-            .label(format!("{done} / {total}")),
-        rows[2],
-    );
-
-    // Count label
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Encrypting… please wait",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))
-        .alignment(Alignment::Center),
-        rows[3],
-    );
-}
-
-fn draw_previewing_overlay(frame: &mut Frame, filename: &str) {
-    // height = 2 rows content + 2 borders + 2 margin = 6; use 7 for comfort
-    let area = centered_popup(frame.area(), 55, 7);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Decrypting ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // filename
-            Constraint::Length(1), // label
-        ])
-        .split(inner);
-
-    let w = rows[0].width as usize;
-    let display = if filename.len() > w {
-        format!("…{}", &filename[filename.len().saturating_sub(w.saturating_sub(1))..])
-    } else {
-        filename.to_string()
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(display, Style::default().fg(Color::White)))
-            .alignment(Alignment::Center),
-        rows[0],
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Decrypting… please wait",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))
-        .alignment(Alignment::Center),
-        rows[1],
-    );
-}
-
-fn draw_exporting_overlay(frame: &mut Frame, total: usize, done: usize, current_file: &str) {
-    let area = centered_popup(frame.area(), 60, 8);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Exporting Files ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // current filename
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // progress gauge
-            Constraint::Length(1), // label
-        ])
-        .split(inner);
-
-    let fname_w = rows[0].width as usize;
-    let fname_display = if current_file.len() > fname_w {
-        format!("…{}", &current_file[current_file.len().saturating_sub(fname_w.saturating_sub(1))..])
-    } else {
-        current_file.to_string()
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(fname_display, Style::default().fg(Color::White)))
-            .alignment(Alignment::Center),
-        rows[0],
-    );
-
-    let ratio = if total == 0 { 0.0 } else { done as f64 / total as f64 };
-    frame.render_widget(
-        Gauge::default()
-            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
-            .ratio(ratio)
-            .label(format!("{done} / {total}")),
-        rows[2],
-    );
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Decrypting… please wait",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))
-        .alignment(Alignment::Center),
-        rows[3],
-    );
-}
-
-fn draw_loading_gallery_overlay(frame: &mut Frame, folder: &str, done: usize, total: usize) {
-    let area = centered_popup(frame.area(), 60, 8);
-    frame.render_widget(Clear, area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
-        .title(Span::styled(
-            " Loading Gallery ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .title_alignment(Alignment::Center);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // folder name
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // progress gauge
-            Constraint::Length(1), // label
-        ])
-        .split(inner);
-
-    let folder_display = if folder.is_empty() { "/" } else { folder };
-    let folder_w = rows[0].width as usize;
-    let folder_display = if folder_display.len() > folder_w {
-        format!("…{}", &folder_display[folder_display.len().saturating_sub(folder_w.saturating_sub(1))..])
-    } else {
-        folder_display.to_string()
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(folder_display, Style::default().fg(Color::White)))
-            .alignment(Alignment::Center),
-        rows[0],
-    );
-
-    let ratio = if total == 0 { 0.0 } else { done as f64 / total as f64 };
-    frame.render_widget(
-        Gauge::default()
-            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
-            .ratio(ratio)
-            .label(format!("{done} / {total}")),
-        rows[2],
-    );
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Decrypting images… please wait",
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))
-        .alignment(Alignment::Center),
-        rows[3],
-    );
-}
-
-// ── Utilities ──────────────────────────────────────────────────────────────
-
-fn human_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * KB;
-    const GB: u64 = 1024 * MB;
-    if bytes >= GB      { format!("{:.1} GB", bytes as f64 / GB as f64) }
-    else if bytes >= MB { format!("{:.1} MB", bytes as f64 / MB as f64) }
-    else if bytes >= KB { format!("{:.1} KB", bytes as f64 / KB as f64) }
-    else                { format!("{bytes} B") }
 }

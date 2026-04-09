@@ -1,5 +1,8 @@
 //! Vault page state machine, background unlock worker, and in-memory operations.
 
+#[path = "state/helpers.rs"]
+mod helpers;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -232,36 +235,21 @@ impl BrowseState {
         let sort_key = self.sort_key;
         let sort_dir = self.sort_dir;
         let mut sorted = pairs;
-        match sort_key {
-            SortKey::Age => {
-                // Insertion order is preserved above; just reverse for Desc.
-                if sort_dir == SortDir::Desc { sorted.reverse(); }
-            }
-            _ => {
-                let handle = &self.handle;
-                sorted.sort_by(|(ua, sa, ca), (ub, sb, cb)| {
-                    let ord = match sort_key {
-                        SortKey::Name => {
-                            let na = handle.index.entries.get(ua).map(|e| e.name.as_str()).unwrap_or("");
-                            let nb = handle.index.entries.get(ub).map(|e| e.name.as_str()).unwrap_or("");
-                            na.cmp(nb)
-                        }
-                        SortKey::Size => sa.cmp(sb),
-                        SortKey::Type => ca.cmp(cb).then_with(|| {
-                            let na = handle.index.entries.get(ua).map(|e| e.name.as_str()).unwrap_or("");
-                            let nb = handle.index.entries.get(ub).map(|e| e.name.as_str()).unwrap_or("");
-                            na.cmp(nb)
-                        }),
-                        SortKey::Age => unreachable!(),
-                    };
-                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
-                });
-            }
+        if sort_key == SortKey::Age {
+            // Insertion order is preserved above; just reverse for Desc.
+            if sort_dir == SortDir::Desc { sorted.reverse(); }
+        } else {
+            let handle = &self.handle;
+            sorted.sort_by(|(ua, sa, ca), (ub, sb, cb)| {
+                let na = handle.index.entries.get(ua).map(|e| e.name.as_str()).unwrap_or("");
+                let nb = handle.index.entries.get(ub).map(|e| e.name.as_str()).unwrap_or("");
+                helpers::sort_order(na, *sa, *ca, nb, *sb, *cb, sort_key, sort_dir)
+            });
         }
         self.file_uuids = sorted.into_iter().map(|(uuid, _, _)| uuid).collect();
 
         // Recompute folder lists, merging in any session-only extra folders.
-        let mut all = collect_all_folders(&self.handle);
+        let mut all = helpers::collect_all_folders(&self.handle);
         for ef in &self.extra_folders {
             if !all.contains(ef) {
                 all.push(ef.clone());
@@ -727,29 +715,13 @@ impl VaultState {
         // Sort items in the same order as the current file list.
         let sort_key = browse.sort_key;
         let sort_dir = browse.sort_dir;
-        match sort_key {
-            SortKey::Age => {
-                // items are already in IndexMap insertion order (age order)
-                if sort_dir == SortDir::Desc { items.reverse(); }
-            }
-            SortKey::Name => {
-                items.sort_by(|(na, _, _, _), (nb, _, _, _)| {
-                    let ord = na.cmp(nb);
-                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
-                });
-            }
-            SortKey::Size => {
-                items.sort_by(|(_, sa, _, _), (_, sb, _, _)| {
-                    let ord = sa.cmp(sb);
-                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
-                });
-            }
-            SortKey::Type => {
-                items.sort_by(|(na, _, ca, _), (nb, _, cb, _)| {
-                    let ord = ca.cmp(cb).then_with(|| na.cmp(nb));
-                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
-                });
-            }
+        if sort_key == SortKey::Age {
+            // items are already in IndexMap insertion order (age order)
+            if sort_dir == SortDir::Desc { items.reverse(); }
+        } else {
+            items.sort_by(|(na, sa, ca, _), (nb, sb, cb, _)| {
+                helpers::sort_order(na, *sa, *ca, nb, *sb, *cb, sort_key, sort_dir)
+            });
         }
 
         let blobs_dir = browse.handle.blobs_dir.clone();
@@ -1115,29 +1087,7 @@ impl VaultState {
         }
         let dest = browse.current_path.clone();
 
-        // Compute new names first (immutable pass), then apply (mutable pass)
-        let mut resolved: Vec<(String, String)> = Vec::new(); // (uuid, final_name)
-        for uuid in &uuids {
-            let base = browse.handle.index.entries.get(uuid)
-                .map(|e| e.name.clone())
-                .unwrap_or_default();
-            let mut final_name = base.clone();
-            let mut counter = 1u32;
-            loop {
-                let conflict = browse.handle.index.entries.iter()
-                    .filter(|(u, _)| *u != uuid)
-                    .any(|(_, e)| e.path == dest && e.name == final_name);
-                if !conflict { break; }
-                let (stem, ext) = split_name(&base);
-                final_name = if ext.is_empty() {
-                    format!("{stem} ({counter})")
-                } else {
-                    format!("{stem} ({counter}).{ext}")
-                };
-                counter += 1;
-            }
-            resolved.push((uuid.clone(), final_name));
-        }
+        let resolved = helpers::resolve_names(&uuids, &dest, &browse.handle);
         for (uuid, final_name) in resolved {
             if let Some(entry) = browse.handle.index.entries.get_mut(&uuid) {
                 entry.name = final_name;
@@ -1176,31 +1126,7 @@ impl VaultState {
         let browse = match &mut self.browse { Some(b) => b, None => return };
         let dest = browse.all_folders.get(tree_cursor).cloned().unwrap_or_default();
 
-        // Resolve names without conflicts — immutable pass (same pattern as paste())
-        let mut resolved: Vec<(String, String)> = Vec::new();
-        for uuid in &uuids {
-            let base = browse.handle.index.entries.get(uuid)
-                .map(|e| e.name.clone())
-                .unwrap_or_default();
-            let mut final_name = base.clone();
-            let mut counter = 1u32;
-            loop {
-                let conflict = browse.handle.index.entries.iter()
-                    .filter(|(u, _)| *u != uuid)
-                    .any(|(_, e)| e.path == dest && e.name == final_name);
-                if !conflict { break; }
-                let (stem, ext) = split_name(&base);
-                final_name = if ext.is_empty() {
-                    format!("{stem} ({counter})")
-                } else {
-                    format!("{stem} ({counter}).{ext}")
-                };
-                counter += 1;
-            }
-            resolved.push((uuid.clone(), final_name));
-        }
-
-        // Apply — mutable pass
+        let resolved = helpers::resolve_names(&uuids, &dest, &browse.handle);
         for (uuid, final_name) in resolved {
             if let Some(entry) = browse.handle.index.entries.get_mut(&uuid) {
                 entry.name = final_name;
@@ -1421,28 +1347,4 @@ impl VaultState {
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/// Collect all unique non-empty folder paths implied by the index, plus root "".
-fn collect_all_folders(handle: &VaultHandle) -> Vec<String> {
-    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    seen.insert(String::new()); // root is always present
-    for entry in handle.index.entries.values() {
-        let mut path = entry.path.clone();
-        loop {
-            if !seen.insert(path.clone()) { break; } // already present — parents too
-            match path.rfind('/') {
-                Some(pos) => { path = path[..pos].to_string(); }
-                None => { seen.insert(String::new()); break; }
-            }
-        }
-    }
-    seen.into_iter().collect()
-}
-
-fn split_name(name: &str) -> (&str, &str) {
-    match name.rfind('.') {
-        Some(pos) if pos > 0 => (&name[..pos], &name[pos + 1..]),
-        _ => (name, ""),
-    }
-}
+// (helpers moved to state/helpers.rs)
