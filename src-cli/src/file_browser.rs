@@ -165,11 +165,15 @@ impl FileBrowser {
             // ── Go up to parent ─────────────────────────────────────────────
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_up(),
 
-            // ── Space: toggle selection (multi-select mode only) ─────────────
-            KeyCode::Char(' ') if self.multi_select => {
+            // ── Space ───────────────────────────────────────────────────────
+            KeyCode::Char(' ') => {
                 if let Some(idx) = self.list_state.selected() {
                     if let Some(entry) = self.entries.get(idx) {
-                        if !entry.is_dir {
+                        if self.select_dirs && entry.is_dir && entry.name != ".." {
+                            // Dir-selection mode: Space confirms the highlighted directory.
+                            return FileBrowserEvent::Selected(entry.path.clone());
+                        } else if self.multi_select && !entry.is_dir {
+                            // Multi-select mode: Space toggles individual files.
                             if !self.toggled.remove(&idx) {
                                 self.toggled.insert(idx);
                             }
@@ -183,11 +187,7 @@ impl FileBrowser {
                 if let Some(idx) = self.list_state.selected() {
                     if let Some(entry) = self.entries.get(idx) {
                         if entry.is_dir {
-                            // In dir-selection mode, Enter on a real dir fires Selected
-                            // (but ".." always navigates up, never selects)
-                            if self.select_dirs && entry.name != ".." {
-                                return FileBrowserEvent::Selected(entry.path.clone());
-                            }
+                            // Always navigate into directories (including in select_dirs mode).
                             let path = entry.path.clone();
                             self.navigate_into(path);
                         } else if self.multi_select {
@@ -417,6 +417,18 @@ impl FileBrowser {
             frame.render_widget(
                 Paragraph::new(Span::styled(confirm_hint, Style::default().fg(DIM)))
                     .alignment(Alignment::Center),
+                chunks[4],
+            );
+        } else if self.select_dirs {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("↑↓ jk  move    ", Style::default().fg(DIM)),
+                    Span::styled("Enter l →  open folder    ", Style::default().fg(DIM)),
+                    Span::styled("Space  select this folder    ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled("Bksp h ←  parent    ", Style::default().fg(DIM)),
+                    Span::styled("Esc  cancel", Style::default().fg(DIM)),
+                ]))
+                .alignment(Alignment::Center),
                 chunks[4],
             );
         } else {
