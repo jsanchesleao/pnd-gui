@@ -31,6 +31,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -45,8 +46,10 @@ const DIR_COLOR: Color = Color::Cyan;
 
 /// What the caller receives when the user makes a choice.
 pub enum FileBrowserEvent {
-    /// User confirmed a file selection. The path is guaranteed to exist.
+    /// User confirmed a single file selection. The path is guaranteed to exist.
     Selected(PathBuf),
+    /// User confirmed a multi-file selection (one or more paths).
+    MultiSelected(Vec<PathBuf>),
     /// User pressed Esc — no selection was made.
     Cancelled,
     /// Still navigating; caller should redraw and keep listening.
@@ -65,6 +68,8 @@ pub enum FileBrowserTarget {
     VaultDir,
     /// Pick the root directory for a new vault being created.
     VaultCreateDir,
+    /// Pick one or more files to add to the currently open vault.
+    VaultAddFiles,
 }
 
 // ── Internal entry ─────────────────────────────────────────────────────────
@@ -88,22 +93,40 @@ pub struct FileBrowser {
     load_error: Option<String>,
     /// When true, pressing Enter on a directory fires Selected instead of navigating.
     select_dirs: bool,
+    /// Title shown in the browser's outer border (default: " File Browser ").
+    title: String,
+    /// When true, Space toggles files and Enter confirms the whole selection.
+    multi_select: bool,
+    /// Indices (into `entries`) of files the user has toggled with Space.
+    toggled: HashSet<usize>,
 }
 
 impl FileBrowser {
     /// Create and immediately load `start_dir` (falls back to `std::env::current_dir`).
     /// Pressing Enter on a file fires `Selected`; directories are navigated into.
     pub fn open(start_dir: Option<&Path>, target: FileBrowserTarget) -> Self {
-        Self::new_inner(start_dir, target, false)
+        Self::new_inner(start_dir, target, false, false, " File Browser ".into())
     }
 
     /// Like `open`, but pressing Enter on a **directory** fires `Selected` instead
     /// of navigating into it. Used for vault folder selection.
     pub fn open_for_dir(start_dir: Option<&Path>, target: FileBrowserTarget) -> Self {
-        Self::new_inner(start_dir, target, true)
+        Self::new_inner(start_dir, target, true, false, " File Browser ".into())
     }
 
-    fn new_inner(start_dir: Option<&Path>, target: FileBrowserTarget, select_dirs: bool) -> Self {
+    /// Like `open`, but Space toggles file selection and Enter confirms the whole
+    /// set. The `title` is shown in the browser's outer border.
+    pub fn open_multi(start_dir: Option<&Path>, target: FileBrowserTarget, title: &str) -> Self {
+        Self::new_inner(start_dir, target, false, true, title.into())
+    }
+
+    fn new_inner(
+        start_dir: Option<&Path>,
+        target: FileBrowserTarget,
+        select_dirs: bool,
+        multi_select: bool,
+        title: String,
+    ) -> Self {
         let cwd = start_dir
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
@@ -115,6 +138,9 @@ impl FileBrowser {
             list_state: ListState::default(),
             load_error: None,
             select_dirs,
+            title,
+            multi_select,
+            toggled: HashSet::new(),
         };
         fb.load();
         fb
@@ -139,6 +165,19 @@ impl FileBrowser {
             // ── Go up to parent ─────────────────────────────────────────────
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_up(),
 
+            // ── Space: toggle selection (multi-select mode only) ─────────────
+            KeyCode::Char(' ') if self.multi_select => {
+                if let Some(idx) = self.list_state.selected() {
+                    if let Some(entry) = self.entries.get(idx) {
+                        if !entry.is_dir {
+                            if !self.toggled.remove(&idx) {
+                                self.toggled.insert(idx);
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Enter / select ──────────────────────────────────────────────
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 if let Some(idx) = self.list_state.selected() {
@@ -151,6 +190,19 @@ impl FileBrowser {
                             }
                             let path = entry.path.clone();
                             self.navigate_into(path);
+                        } else if self.multi_select {
+                            // Confirm selection: use toggled set if non-empty,
+                            // otherwise treat the cursor file as a single selection.
+                            let paths = if !self.toggled.is_empty() {
+                                let mut sorted: Vec<usize> = self.toggled.iter().cloned().collect();
+                                sorted.sort_unstable();
+                                sorted.iter()
+                                    .filter_map(|&i| self.entries.get(i).map(|e| e.path.clone()))
+                                    .collect()
+                            } else {
+                                vec![entry.path.clone()]
+                            };
+                            return FileBrowserEvent::MultiSelected(paths);
                         } else {
                             return FileBrowserEvent::Selected(self.entries[idx].path.clone());
                         }
@@ -197,6 +249,7 @@ impl FileBrowser {
     fn load(&mut self) {
         self.entries.clear();
         self.load_error = None;
+        self.toggled.clear();
 
         // Parent shortcut — absent only at filesystem root
         if let Some(parent) = self.cwd.parent() {
@@ -250,7 +303,7 @@ impl FileBrowser {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(ACCENT))
             .title(Span::styled(
-                " File Browser ",
+                self.title.clone(),
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ))
             .title_alignment(Alignment::Center);
@@ -314,7 +367,7 @@ impl FileBrowser {
                 chunks[2],
             );
         } else {
-            let items: Vec<ListItem> = self.entries.iter().map(|e| {
+            let items: Vec<ListItem> = self.entries.iter().enumerate().map(|(i, e)| {
                 if e.name == ".." {
                     ListItem::new(Line::from(vec![
                         Span::styled("  [..]   ", Style::default().fg(DIR_COLOR)),
@@ -325,6 +378,11 @@ impl FileBrowser {
                         Span::styled("  [/]    ", Style::default().fg(DIM)),
                         Span::styled(e.name.clone(), Style::default().fg(DIR_COLOR)),
                         Span::styled("/", Style::default().fg(DIM)),
+                    ]))
+                } else if self.multi_select && self.toggled.contains(&i) {
+                    ListItem::new(Line::from(vec![
+                        Span::styled("  [x]    ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                        Span::styled(e.name.clone(), Style::default().fg(Color::White)),
                     ]))
                 } else {
                     ListItem::new(Line::from(vec![
@@ -349,17 +407,31 @@ impl FileBrowser {
         }
 
         // [4] Key hint bar
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("↑↓ jk  move    ", Style::default().fg(DIM)),
-                Span::styled("PgUp/Dn  scroll    ", Style::default().fg(DIM)),
-                Span::styled("Enter l  open    ", Style::default().fg(DIM)),
-                Span::styled("Bksp h ←  parent    ", Style::default().fg(DIM)),
-                Span::styled("g G  top/bottom    ", Style::default().fg(DIM)),
-                Span::styled("Esc  cancel", Style::default().fg(DIM)),
-            ]))
-            .alignment(Alignment::Center),
-            chunks[4],
-        );
+        if self.multi_select {
+            let count = self.toggled.len();
+            let confirm_hint = if count > 0 {
+                format!("Space toggle    Enter confirm ({count} selected)    Bksp h ←  parent    Esc cancel")
+            } else {
+                "Space toggle    Enter select / open    Bksp h ←  parent    Esc cancel".to_string()
+            };
+            frame.render_widget(
+                Paragraph::new(Span::styled(confirm_hint, Style::default().fg(DIM)))
+                    .alignment(Alignment::Center),
+                chunks[4],
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("↑↓ jk  move    ", Style::default().fg(DIM)),
+                    Span::styled("PgUp/Dn  scroll    ", Style::default().fg(DIM)),
+                    Span::styled("Enter l  open    ", Style::default().fg(DIM)),
+                    Span::styled("Bksp h ←  parent    ", Style::default().fg(DIM)),
+                    Span::styled("g G  top/bottom    ", Style::default().fg(DIM)),
+                    Span::styled("Esc  cancel", Style::default().fg(DIM)),
+                ]))
+                .alignment(Alignment::Center),
+                chunks[4],
+            );
+        }
     }
 }

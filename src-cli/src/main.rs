@@ -132,6 +132,11 @@ impl App {
         let start = infer_start_dir(path_hint);
         self.file_browser = Some(FileBrowser::open_for_dir(start.as_deref(), target));
     }
+
+    /// Open the file browser in multi-select mode with a contextual title.
+    pub(crate) fn open_file_browser_multi(&mut self, start: Option<&std::path::Path>, target: FileBrowserTarget) {
+        self.file_browser = Some(FileBrowser::open_multi(start, target, " Add Files to Vault "));
+    }
 }
 
 /// Given a partially typed path, infer which directory to start the browser in.
@@ -169,6 +174,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         app.enc_dec.poll_progress();
         app.preview.poll_progress();
         app.vault.poll_progress();
+        app.vault.poll_add_progress();
 
         // Render image on the main thread if decryption just completed.
         if let pages::preview::PreviewPhase::PendingRender { .. } = app.preview.phase {
@@ -196,7 +202,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         // progress bar keeps updating even without user input.
         let running = matches!(app.enc_dec.status, OpStatus::Running(_))
             || matches!(app.preview.phase, pages::preview::PreviewPhase::Decrypting(_))
-            || app.vault.is_opening();
+            || app.vault.is_opening()
+            || app.vault.is_adding();
         let has_event = if running {
             event::poll(Duration::from_millis(50))?
         } else {
@@ -218,6 +225,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
                 FileBrowserEvent::Selected(path) => {
                     app.file_browser = None;
                     apply_browser_selection(&mut app, target, path);
+                }
+                FileBrowserEvent::MultiSelected(paths) => {
+                    app.file_browser = None;
+                    apply_browser_multi_selection(&mut app, target, paths);
                 }
                 FileBrowserEvent::Cancelled => { app.file_browser = None; }
                 FileBrowserEvent::Pending => {}
@@ -265,6 +276,21 @@ fn apply_browser_selection(app: &mut App, target: FileBrowserTarget, path: PathB
         FileBrowserTarget::VaultCreateDir => {
             app.vault.set_create_path(path.to_string_lossy().as_ref());
         }
+        FileBrowserTarget::VaultAddFiles => {
+            // Single file selected without using Space — treat as a one-file add.
+            app.vault.start_add(vec![path]);
+        }
+    }
+}
+
+/// Route a multi-file browser selection to the correct handler.
+fn apply_browser_multi_selection(app: &mut App, target: FileBrowserTarget, paths: Vec<PathBuf>) {
+    match target {
+        FileBrowserTarget::VaultAddFiles => {
+            app.vault.start_add(paths);
+        }
+        // Other targets don't support multi-select; ignore.
+        _ => {}
     }
 }
 

@@ -7,8 +7,8 @@ use crate::file_browser::FileBrowserTarget;
 use super::state::{PanelFocus, Phase};
 
 pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
-    // Block all input while the vault is being opened or created
-    if app.vault.is_opening() { return; }
+    // Block all input while the vault is being opened, created, or adding files
+    if app.vault.is_opening() || app.vault.is_adding() { return; }
 
     match &app.vault.phase {
         Phase::VaultMenu { .. }       => handle_vault_menu(app, code),
@@ -20,6 +20,7 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
         Phase::ConfirmDelete { .. }   => handle_confirm_delete(app, code),
         Phase::Move { .. }            => handle_move(app, code),
         Phase::Opening(_)             => {} // blocked above
+        Phase::Adding { .. }          => {} // blocked above
     }
 }
 
@@ -27,7 +28,7 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
 
 fn handle_vault_menu(app: &mut App, code: KeyCode) {
     match code {
-        KeyCode::Esc => { app.screen = Screen::Menu; }
+        KeyCode::Esc | KeyCode::Char('h') => { app.screen = Screen::Menu; }
         KeyCode::Up | KeyCode::Char('k') => app.vault.menu_up(),
         KeyCode::Down | KeyCode::Char('j') => app.vault.menu_down(),
         KeyCode::Enter | KeyCode::Char('l') => app.vault.menu_select(),
@@ -223,6 +224,11 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
         }
         KeyCode::Char('A') => {
             if let Some(b) = &mut app.vault.browse { b.selected_uuids.clear(); }
+        }
+        KeyCode::Char('i') => {
+            // Open multi-select file browser to add files to the vault
+            let start = std::env::current_dir().ok();
+            app.open_file_browser_multi(start.as_deref(), FileBrowserTarget::VaultAddFiles);
         }
         KeyCode::Char('r') => app.vault.enter_rename(),
         KeyCode::Char('d') => app.vault.enter_delete(),

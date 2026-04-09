@@ -1,6 +1,7 @@
 //! Vault page state machine, background unlock worker, and in-memory operations.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 use super::types::{VaultEntry, VaultHandle};
@@ -11,6 +12,15 @@ pub(super) enum WorkerMsg {
     Progress(u8),
     Opened(VaultHandle),
     Created(VaultHandle),
+    Failed(String),
+}
+
+pub(super) enum AddWorkerMsg {
+    /// `done` files encrypted so far out of `total`, currently working on `filename`.
+    Progress { done: usize, total: usize, filename: String },
+    /// All files encrypted; payload is the new (uuid, entry) pairs to merge.
+    Done(Vec<(String, VaultEntry)>),
+    /// Unrecoverable error during add.
     Failed(String),
 }
 
@@ -245,6 +255,8 @@ pub(crate) enum Phase {
     ConfirmDelete { uuids: Vec<String> },
     /// Move-destination picker overlay.
     Move { uuids: Vec<String>, tree_cursor: usize },
+    /// Background file-add operation in progress (overlay on top of Browse).
+    Adding { total: usize, done: usize, current_file: String },
 }
 
 // ── Top-level state ────────────────────────────────────────────────────────
@@ -254,6 +266,8 @@ pub(crate) struct VaultState {
     /// Present whenever the vault is unlocked (Browse + all overlay phases).
     pub(crate) browse: Option<BrowseState>,
     pub(super) rx: Option<mpsc::Receiver<WorkerMsg>>,
+    /// Receiver for the background add-files worker.
+    pub(super) add_rx: Option<mpsc::Receiver<AddWorkerMsg>>,
 }
 
 impl VaultState {
@@ -262,6 +276,7 @@ impl VaultState {
             phase: Phase::VaultMenu { cursor: 0 },
             browse: None,
             rx: None,
+            add_rx: None,
         }
     }
 
@@ -281,6 +296,10 @@ impl VaultState {
 
     pub(crate) fn is_opening(&self) -> bool {
         matches!(self.phase, Phase::Opening(_))
+    }
+
+    pub(crate) fn is_adding(&self) -> bool {
+        matches!(self.phase, Phase::Adding { .. })
     }
 
     // ── Creating ────────────────────────────────────────────────────────────
@@ -606,8 +625,34 @@ impl VaultState {
         let browse = match &mut self.browse { Some(b) => b, None => return };
         let dest = browse.all_folders.get(tree_cursor).cloned().unwrap_or_default();
 
+        // Resolve names without conflicts — immutable pass (same pattern as paste())
+        let mut resolved: Vec<(String, String)> = Vec::new();
         for uuid in &uuids {
-            if let Some(entry) = browse.handle.index.entries.get_mut(uuid) {
+            let base = browse.handle.index.entries.get(uuid)
+                .map(|e| e.name.clone())
+                .unwrap_or_default();
+            let mut final_name = base.clone();
+            let mut counter = 1u32;
+            loop {
+                let conflict = browse.handle.index.entries.iter()
+                    .filter(|(u, _)| *u != uuid)
+                    .any(|(_, e)| e.path == dest && e.name == final_name);
+                if !conflict { break; }
+                let (stem, ext) = split_name(&base);
+                final_name = if ext.is_empty() {
+                    format!("{stem} ({counter})")
+                } else {
+                    format!("{stem} ({counter}).{ext}")
+                };
+                counter += 1;
+            }
+            resolved.push((uuid.clone(), final_name));
+        }
+
+        // Apply — mutable pass
+        for (uuid, final_name) in resolved {
+            if let Some(entry) = browse.handle.index.entries.get_mut(&uuid) {
+                entry.name = final_name;
                 entry.path = dest.clone();
             }
         }
@@ -630,6 +675,90 @@ impl VaultState {
             Err(e) => format!("Save failed: {e}"),
         };
         browse.status_msg = Some(msg);
+    }
+
+    // ── Add files ───────────────────────────────────────────────────────────
+
+    /// Spawn a background thread to encrypt and add `paths` to the vault.
+    /// Transitions to `Phase::Adding`. Ignores the call if no vault is open.
+    pub(crate) fn start_add(&mut self, paths: Vec<PathBuf>) {
+        let browse = match &self.browse { Some(b) => b, None => return };
+        if paths.is_empty() { return; }
+
+        let blobs_dir = browse.handle.blobs_dir.clone();
+        let virtual_path = browse.current_path.clone();
+        let total = paths.len();
+
+        let (tx, rx) = mpsc::channel();
+        self.add_rx = Some(rx);
+        self.phase = Phase::Adding { total, done: 0, current_file: String::new() };
+
+        std::thread::spawn(move || {
+            let mut results: Vec<(String, super::types::VaultEntry)> = Vec::new();
+
+            for (i, file_path) in paths.iter().enumerate() {
+                let filename = file_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file_path.to_string_lossy().into_owned());
+
+                let _ = tx.send(AddWorkerMsg::Progress {
+                    done: i,
+                    total,
+                    filename: filename.clone(),
+                });
+
+                match super::crypto::encrypt_file_to_vault(file_path, &blobs_dir, &virtual_path) {
+                    Ok(pair) => results.push(pair),
+                    Err(e) => {
+                        let _ = tx.send(AddWorkerMsg::Failed(
+                            format!("Failed to add '{}': {}", filename, e)
+                        ));
+                        return;
+                    }
+                }
+            }
+
+            let _ = tx.send(AddWorkerMsg::Done(results));
+        });
+    }
+
+    /// Drain the add-worker channel. Merges results into the index and auto-saves
+    /// when complete. Should be called every frame from the main loop.
+    pub(crate) fn poll_add_progress(&mut self) {
+        if self.add_rx.is_none() { return; }
+        loop {
+            match self.add_rx.as_ref().unwrap().try_recv() {
+                Ok(AddWorkerMsg::Progress { done, total, filename }) => {
+                    self.phase = Phase::Adding { total, done, current_file: filename };
+                }
+                Ok(AddWorkerMsg::Done(entries)) => {
+                    self.add_rx = None;
+                    let browse = match &mut self.browse { Some(b) => b, None => { self.phase = Phase::Browse; break; } };
+                    let n = entries.len();
+                    for (uuid, entry) in entries {
+                        browse.handle.index.entries.insert(uuid, entry);
+                    }
+                    let msg = match super::crypto::save_vault(&browse.handle) {
+                        Ok(()) => { browse.dirty = false; format!("Added {n} file(s) — saved") }
+                        Err(e) => { browse.dirty = true;  format!("Added {n} file(s) — save failed: {e}") }
+                    };
+                    browse.status_msg = Some(msg);
+                    browse.refresh();
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Ok(AddWorkerMsg::Failed(msg)) => {
+                    self.add_rx = None;
+                    if let Some(browse) = &mut self.browse {
+                        browse.status_msg = Some(msg);
+                    }
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
     }
 
     /// Return to the vault submenu and discard the open vault.

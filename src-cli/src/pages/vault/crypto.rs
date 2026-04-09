@@ -92,6 +92,23 @@ pub(crate) fn generate_key_base64() -> String {
     B64.encode(key)
 }
 
+/// Generate a random UUID v4 string (no external crate required).
+pub(crate) fn generate_uuid() -> String {
+    let mut bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    // Set version (4) and variant (RFC4122) bits.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+    )
+}
+
 // ── index.lock helpers (password-derived key) ─────────────────────────────
 
 /// Decrypt bytes that were encrypted with a PBKDF2-derived key.
@@ -241,6 +258,63 @@ pub(crate) fn decrypt_entry(handle: &VaultHandle, uuid: &str) -> Result<Vec<u8>,
     }
 
     Ok(out)
+}
+
+/// Encrypt one file from disk and write its blob(s) to `blobs_dir`.
+///
+/// Large files (> 256 MiB) are split into multiple parts, each encrypted with
+/// an independent random AES-256 key. Returns a `(file_uuid, VaultEntry)` pair
+/// ready to be inserted into the vault index.
+///
+/// `virtual_path` is the vault folder path where the file will appear (use `""`
+/// for the vault root).
+pub(crate) fn encrypt_file_to_vault(
+    file_path: &Path,
+    blobs_dir: &Path,
+    virtual_path: &str,
+) -> Result<(String, super::types::VaultEntry), VaultError> {
+    use super::types::{VaultEntry, VaultPart};
+
+    const BLOCK_SIZE: usize = 256 * 1024 * 1024; // 256 MiB
+
+    let name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let data = std::fs::read(file_path)?;
+    let size = data.len() as u64;
+
+    let file_uuid = generate_uuid();
+    let mut parts: Vec<VaultPart> = Vec::new();
+
+    if data.is_empty() {
+        // Empty file: one empty blob part.
+        let key = generate_key_base64();
+        let blob_uuid = generate_uuid();
+        let blob = encrypt_blob_with_key(&[], &key)?;
+        std::fs::write(blobs_dir.join(&blob_uuid), blob)?;
+        parts.push(VaultPart { uuid: blob_uuid, key_base64: key });
+    } else {
+        for chunk in data.chunks(BLOCK_SIZE) {
+            let key = generate_key_base64();
+            let blob_uuid = generate_uuid();
+            let blob = encrypt_blob_with_key(chunk, &key)?;
+            std::fs::write(blobs_dir.join(&blob_uuid), blob)?;
+            parts.push(VaultPart { uuid: blob_uuid, key_base64: key });
+        }
+    }
+
+    let entry = VaultEntry {
+        name,
+        path: virtual_path.to_string(),
+        size,
+        parts,
+        thumbnail_uuid: None,
+        thumbnail_key_base64: None,
+    };
+
+    Ok((file_uuid, entry))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
