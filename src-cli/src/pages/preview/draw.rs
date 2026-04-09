@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::{ACCENT, DIM, FAILURE, SUCCESS};
 use crate::pages::widgets::{input_block, outer_block, tail_fit};
+use crate::yazi::yazi_available;
 use super::state::{PreviewPhase, PreviewResult, PreviewState};
 
 pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
@@ -46,24 +47,61 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
     );
 
     // [2] path input
+    let path_focused = state.focus == 0;
     let inner_w = c[2].width.saturating_sub(4) as usize;
-    let path_display = {
-        let s = if state.focus == 0 { format!("{}|", state.path) } else { state.path.clone() };
-        tail_fit(&s, inner_w).to_string()
+    let path_display = if path_focused && state.path_edit_mode {
+        tail_fit(&format!("{}|", state.path), inner_w).to_string()
+    } else if state.path.is_empty() {
+        String::new()
+    } else {
+        tail_fit(&state.path, inner_w).to_string()
     };
-    let path_label = if state.focus == 0 { "File path  Enter→browse" } else { "File path" };
+    let path_label = if path_focused && state.path_edit_mode {
+        "File path  (editing)"
+    } else {
+        "File path"
+    };
+    let path_paragraph = if state.path.is_empty() && !state.path_edit_mode {
+        Paragraph::new(Span::styled(
+            "(no file selected)",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))
+    } else {
+        Paragraph::new(path_display.as_str())
+    };
     frame.render_widget(
-        Paragraph::new(path_display.as_str()).block(input_block(path_label, state.focus == 0)),
+        path_paragraph.block(input_block(path_label, path_focused)),
         c[2],
     );
 
     // [3] path sub-hint (only visible when path field is focused)
-    if state.focus == 0 {
+    if path_focused {
+        let hint_spans = if state.path_edit_mode {
+            vec![
+                Span::styled("  Enter", Style::default().fg(ACCENT)),
+                Span::styled(" confirm    ", Style::default().fg(DIM)),
+                Span::styled("Esc", Style::default().fg(ACCENT)),
+                Span::styled(" cancel edit    ", Style::default().fg(DIM)),
+                Span::styled("Tab", Style::default().fg(ACCENT)),
+                Span::styled(" next field", Style::default().fg(DIM)),
+            ]
+        } else {
+            let mut spans = vec![
+                Span::styled("  t", Style::default().fg(ACCENT)),
+                Span::styled(" type    ", Style::default().fg(DIM)),
+                Span::styled("b", Style::default().fg(ACCENT)),
+                Span::styled(" browser    ", Style::default().fg(DIM)),
+            ];
+            if yazi_available() {
+                spans.push(Span::styled("y", Style::default().fg(ACCENT)));
+                spans.push(Span::styled(" yazi    ", Style::default().fg(DIM)));
+            }
+            spans.push(Span::styled("Enter", Style::default().fg(ACCENT)));
+            spans.push(Span::styled(" auto-pick", Style::default().fg(DIM)));
+            spans
+        };
         frame.render_widget(
-            Paragraph::new(Span::styled(
-                "  type a path, or press Enter to browse the filesystem",
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            )),
+            Paragraph::new(Line::from(hint_spans)),
             c[3],
         );
     }
@@ -163,9 +201,11 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
     // [10] hint bar
     let hint = if is_decrypting {
         "please wait…"
+    } else if state.focus == 0 && state.path_edit_mode {
+        "Esc cancel edit    Tab next field"
     } else {
         match state.focus {
-            0 => "Esc back    Tab next field    Enter browse filesystem",
+            0 => "Esc back    Tab next field",
             _ => "Esc back    Tab previous field    Enter preview",
         }
     };

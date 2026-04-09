@@ -55,6 +55,9 @@ pub(crate) struct PreviewState {
     pub(crate) path: String,
     pub(crate) password: String,
     pub(crate) focus: usize,
+    /// When `true` the path field accepts keyboard text input.
+    /// When `false` it shows the selected path with picker action shortcuts.
+    pub(crate) path_edit_mode: bool,
     pub(crate) phase: PreviewPhase,
     pub(super) progress_rx: Option<mpsc::Receiver<WorkerMsg>>,
 }
@@ -65,6 +68,7 @@ impl PreviewState {
             path: String::new(),
             password: String::new(),
             focus: 0,
+            path_edit_mode: false,
             phase: PreviewPhase::Idle,
             progress_rx: None,
         }

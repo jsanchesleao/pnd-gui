@@ -109,11 +109,9 @@ impl App {
         match item {
             MenuItem::EncryptDecrypt => {
                 self.enc_dec = pages::enc_dec::EncDecState::new();
-                self.open_file_browser("", FileBrowserTarget::EncDecPath);
             }
             MenuItem::Preview => {
                 self.preview = pages::preview::PreviewState::new();
-                self.open_file_browser("", FileBrowserTarget::PreviewPath);
             }
             MenuItem::Vault => {
                 self.vault = pages::vault::VaultState::new();
@@ -161,6 +159,24 @@ impl App {
         } else {
             self.file_browser = Some(FileBrowser::open_multi(start, target, " Add Files to Vault "));
         }
+    }
+
+    /// Always open the built-in TUI file browser, regardless of yazi availability.
+    pub(crate) fn open_builtin_browser(&mut self, path_hint: &str, target: FileBrowserTarget) {
+        let start = infer_start_dir(path_hint);
+        self.file_browser = Some(FileBrowser::open(start.as_deref(), target));
+    }
+
+    /// Always open the built-in TUI directory browser, regardless of yazi availability.
+    pub(crate) fn open_builtin_browser_dir(&mut self, path_hint: &str, target: FileBrowserTarget) {
+        let start = infer_start_dir(path_hint);
+        self.file_browser = Some(FileBrowser::open_for_dir(start.as_deref(), target));
+    }
+
+    /// Queue a yazi pick (caller must verify `yazi::yazi_available()` first).
+    pub(crate) fn open_yazi_picker(&mut self, path_hint: &str, target: FileBrowserTarget) {
+        let start = infer_start_dir(path_hint);
+        self.yazi_pending = Some(YaziPick { target, start_dir: start, multi: false });
     }
 }
 

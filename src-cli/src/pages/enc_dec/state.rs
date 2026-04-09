@@ -27,6 +27,9 @@ pub(crate) struct EncDecState {
     pub(crate) path: String,
     pub(crate) password: String,
     pub(crate) focus: usize,
+    /// When `true` the path field accepts keyboard text input.
+    /// When `false` it shows the selected path with picker action shortcuts.
+    pub(crate) path_edit_mode: bool,
     pub(crate) status: OpStatus,
     pub(super) progress_rx: Option<mpsc::Receiver<WorkerMsg>>,
 }
@@ -37,6 +40,7 @@ impl EncDecState {
             path: String::new(),
             password: String::new(),
             focus: 0,
+            path_edit_mode: false,
             status: OpStatus::Idle,
             progress_rx: None,
         }

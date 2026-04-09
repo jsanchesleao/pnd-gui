@@ -10,13 +10,14 @@ use ratatui::{
 
 use crate::{ACCENT, DIM, FAILURE, SUCCESS};
 use crate::pages::widgets::{input_block, outer_block, tail_fit};
+use crate::yazi::yazi_available;
 use super::state::{BrowseState, PanelFocus, Phase, VaultState};
 
 pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
     match &state.phase {
         Phase::VaultMenu { cursor } => draw_vault_menu(frame, *cursor),
-        Phase::Locked { vault_path, password, focus, error } => {
-            draw_locked(frame, vault_path, password, *focus, error.as_deref(), false)
+        Phase::Locked { vault_path, password, focus, path_edit_mode, error } => {
+            draw_locked(frame, vault_path, password, *focus, *path_edit_mode, error.as_deref(), false)
         }
         Phase::Creating { vault_path, blobs_dir, password, focus, error } => {
             draw_creating(frame, vault_path, blobs_dir, password, *focus, error.as_deref())
@@ -27,7 +28,7 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
             draw_confirm_create_dir_overlay(frame, vault_path);
         }
         Phase::Opening(pct) => {
-            draw_locked(frame, "", "", 1, None, true);
+            draw_locked(frame, "", "", 1, false, None, true);
             // Re-draw the progress bar on top of the locked form
             draw_opening(frame, *pct);
         }
@@ -166,6 +167,7 @@ fn draw_locked(
     vault_path: &str,
     password: &str,
     focus: usize,
+    path_edit_mode: bool,
     error: Option<&str>,
     is_opening: bool,
 ) {
@@ -200,25 +202,60 @@ fn draw_locked(
     );
 
     // [2] vault path
+    let path_focused = focus == 0;
     let inner_w = c[2].width.saturating_sub(4) as usize;
-    let path_display = {
-        let s = if focus == 0 { format!("{vault_path}|") } else { vault_path.to_string() };
-        tail_fit(&s, inner_w).to_string()
+    let path_display = if path_focused && path_edit_mode {
+        tail_fit(&format!("{vault_path}|"), inner_w).to_string()
+    } else if vault_path.is_empty() {
+        String::new()
+    } else {
+        tail_fit(vault_path, inner_w).to_string()
     };
-    let path_label = if focus == 0 { "Vault folder  Enter→browse" } else { "Vault folder" };
+    let path_label = if path_focused && path_edit_mode {
+        "Vault folder  (editing)"
+    } else {
+        "Vault folder"
+    };
+    let path_paragraph = if vault_path.is_empty() && !path_edit_mode {
+        Paragraph::new(Span::styled(
+            "(no folder selected)",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))
+    } else {
+        Paragraph::new(path_display.as_str())
+    };
     frame.render_widget(
-        Paragraph::new(path_display.as_str()).block(input_block(path_label, focus == 0)),
+        path_paragraph.block(input_block(path_label, path_focused)),
         c[2],
     );
 
-    if focus == 0 {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "  type a path, or press Enter to browse for the vault folder",
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            )),
-            c[3],
-        );
+    // [3] path sub-hint (only visible when path field is focused)
+    if path_focused {
+        let hint_spans = if path_edit_mode {
+            vec![
+                Span::styled("  Enter", Style::default().fg(ACCENT)),
+                Span::styled(" confirm    ", Style::default().fg(DIM)),
+                Span::styled("Esc", Style::default().fg(ACCENT)),
+                Span::styled(" cancel edit    ", Style::default().fg(DIM)),
+                Span::styled("Tab", Style::default().fg(ACCENT)),
+                Span::styled(" next field", Style::default().fg(DIM)),
+            ]
+        } else {
+            let mut spans = vec![
+                Span::styled("  t", Style::default().fg(ACCENT)),
+                Span::styled(" type    ", Style::default().fg(DIM)),
+                Span::styled("b", Style::default().fg(ACCENT)),
+                Span::styled(" browser    ", Style::default().fg(DIM)),
+            ];
+            if yazi_available() {
+                spans.push(Span::styled("y", Style::default().fg(ACCENT)));
+                spans.push(Span::styled(" yazi    ", Style::default().fg(DIM)));
+            }
+            spans.push(Span::styled("Enter", Style::default().fg(ACCENT)));
+            spans.push(Span::styled(" auto-pick", Style::default().fg(DIM)));
+            spans
+        };
+        frame.render_widget(Paragraph::new(Line::from(hint_spans)), c[3]);
     }
 
     // [5] password
@@ -243,9 +280,13 @@ fn draw_locked(
     }
 
     // [10] hint
-    let hint = match focus {
-        0 => "Esc back    Tab next field    Enter browse filesystem",
-        _ => "Esc back    Tab previous field    Enter open vault",
+    let hint = if path_focused && path_edit_mode {
+        "Esc cancel edit    Tab next field"
+    } else {
+        match focus {
+            0 => "Esc back    Tab next field",
+            _ => "Esc back    Tab previous field    Enter open vault",
+        }
     };
     frame.render_widget(
         Paragraph::new(Span::styled(hint, Style::default().fg(DIM))).alignment(Alignment::Center),

@@ -294,6 +294,8 @@ pub(crate) enum Phase {
         vault_path: String,
         password: String,
         focus: usize,
+        /// `true` while the vault-path field is in keyboard-edit mode.
+        path_edit_mode: bool,
         error: Option<String>,
     },
     /// Create-new-vault form (3 fields: vault folder, blobs subfolder, password).
@@ -700,6 +702,7 @@ impl VaultState {
                         vault_path: String::new(),
                         password: String::new(),
                         focus: 0,
+                        path_edit_mode: false,
                         error: Some(msg),
                     };
                     break;
@@ -1115,6 +1118,7 @@ impl VaultState {
                     vault_path: String::new(),
                     password: String::new(),
                     focus: 0,
+                    path_edit_mode: false,
                     error: None,
                 };
             }

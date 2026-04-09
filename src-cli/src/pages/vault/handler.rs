@@ -4,6 +4,7 @@ use crossterm::event::KeyCode;
 
 use crate::{App, Screen};
 use crate::file_browser::FileBrowserTarget;
+use crate::yazi::yazi_available;
 use super::state::{PanelFocus, Phase};
 
 pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
@@ -47,29 +48,77 @@ fn handle_vault_menu(app: &mut App, code: KeyCode) {
 // ── Locked ─────────────────────────────────────────────────────────────────
 
 fn handle_locked(app: &mut App, code: KeyCode) {
-    match code {
-        KeyCode::Esc => { app.vault.phase = Phase::VaultMenu { cursor: 0 }; return; }
-        KeyCode::Enter if locked_focus(app) == 0 => {
-            let hint = locked_path(app).to_string();
-            app.open_file_browser_dir(&hint, FileBrowserTarget::VaultDir);
-            return;
+    // ── Path field (focus = 0) ─────────────────────────────────────────────
+    if locked_focus(app) == 0 {
+        if locked_path_edit_mode(app) {
+            // Edit mode: accept text input; Enter/Esc/Tab exit edit mode.
+            match code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    if let Phase::Locked { path_edit_mode, .. } = &mut app.vault.phase {
+                        *path_edit_mode = false;
+                    }
+                }
+                KeyCode::Tab | KeyCode::BackTab => {
+                    if let Phase::Locked { path_edit_mode, .. } = &mut app.vault.phase {
+                        *path_edit_mode = false;
+                    }
+                    app.vault.advance_focus();
+                }
+                KeyCode::Char(c) => {
+                    if let Phase::Locked { vault_path, error, .. } = &mut app.vault.phase {
+                        vault_path.push(c);
+                        *error = None;
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Phase::Locked { vault_path, error, .. } = &mut app.vault.phase {
+                        vault_path.pop();
+                        *error = None;
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            // Display mode: Esc goes back, picker shortcuts, Tab advances.
+            match code {
+                KeyCode::Esc => { app.vault.phase = Phase::VaultMenu { cursor: 0 }; }
+                KeyCode::Char('t') => {
+                    if let Phase::Locked { path_edit_mode, .. } = &mut app.vault.phase {
+                        *path_edit_mode = true;
+                    }
+                }
+                KeyCode::Char('b') => {
+                    let hint = locked_path(app).to_string();
+                    app.open_builtin_browser_dir(&hint, FileBrowserTarget::VaultDir);
+                }
+                KeyCode::Char('y') if yazi_available() => {
+                    let hint = locked_path(app).to_string();
+                    app.open_yazi_picker(&hint, FileBrowserTarget::VaultDir);
+                }
+                KeyCode::Enter => {
+                    let hint = locked_path(app).to_string();
+                    app.open_file_browser_dir(&hint, FileBrowserTarget::VaultDir);
+                }
+                KeyCode::Tab | KeyCode::BackTab => { app.vault.advance_focus(); }
+                _ => {}
+            }
         }
-        _ => {}
+        return;
     }
 
+    // ── Password field (focus = 1) ─────────────────────────────────────────
     match code {
+        KeyCode::Esc => { app.vault.phase = Phase::VaultMenu { cursor: 0 }; }
         KeyCode::Tab | KeyCode::BackTab => app.vault.advance_focus(),
         KeyCode::Enter => app.vault.start_unlock(),
         KeyCode::Char(c) => {
-            if let Phase::Locked { vault_path, password, focus, error, .. } = &mut app.vault.phase {
-                if *focus == 0 { vault_path.push(c); *error = None; }
-                else           { password.push(c); }
+            if let Phase::Locked { password, .. } = &mut app.vault.phase {
+                password.push(c);
             }
         }
         KeyCode::Backspace => {
-            if let Phase::Locked { vault_path, password, focus, error, .. } = &mut app.vault.phase {
-                if *focus == 0 { vault_path.pop(); *error = None; }
-                else           { password.pop(); }
+            if let Phase::Locked { password, .. } = &mut app.vault.phase {
+                password.pop();
             }
         }
         _ => {}
@@ -156,6 +205,13 @@ fn locked_path(app: &App) -> &str {
     match &app.vault.phase {
         Phase::Locked { vault_path, .. } => vault_path.as_str(),
         _ => "",
+    }
+}
+
+fn locked_path_edit_mode(app: &App) -> bool {
+    match &app.vault.phase {
+        Phase::Locked { path_edit_mode, .. } => *path_edit_mode,
+        _ => false,
     }
 }
 
