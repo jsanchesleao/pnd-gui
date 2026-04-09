@@ -545,10 +545,12 @@ fn draw_list_panel(frame: &mut Frame, browse: &BrowseState, area: Rect) {
     let focused = browse.panel_focus == PanelFocus::List;
     let border_color = if focused { ACCENT } else { DIM };
 
+    let sort_label = browse.sort_key.label();
+    let sort_arrow = browse.sort_dir.arrow();
     let path_title = if browse.current_path.is_empty() {
-        " / ".to_string()
+        format!(" / [{sort_label} {sort_arrow}] ")
     } else {
-        format!(" /{} ", browse.current_path)
+        format!(" /{} [{sort_label} {sort_arrow}] ", browse.current_path)
     };
 
     let block = Block::default()
@@ -626,7 +628,7 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
         // Build hint string without format!() owning a temporary
         let _ = clip_hint;
-        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    g folder gallery    G current gallery    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
+        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    o sort    O dir    g gallery    G cur gallery    i add    e export    n folder    r rename    d del    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
     let line = Span::styled(text, Style::default().fg(color));

@@ -183,7 +183,7 @@ pub(crate) fn create_vault(
     let index = VaultIndex {
         version: 1,
         blobs_dir: blobs_dir_name.map(str::to_string),
-        entries: std::collections::HashMap::new(),
+        entries: indexmap::IndexMap::new(),
     };
     let blobs_dir = VaultHandle::resolve_blobs_dir(&root_buf, &index);
     let handle = VaultHandle {
@@ -322,7 +322,7 @@ pub(crate) fn encrypt_file_to_vault(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use indexmap::IndexMap;
     use tempfile::TempDir;
 
     // ── Helpers ─────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ mod tests {
     /// Build a minimal VaultHandle backed by a real temp directory.
     fn make_handle(dir: &TempDir, password: &str) -> VaultHandle {
         let root = dir.path().to_path_buf();
-        let index = VaultIndex { version: 1, blobs_dir: None, entries: HashMap::new() };
+        let index = VaultIndex { version: 1, blobs_dir: None, entries: IndexMap::new() };
         VaultHandle {
             blobs_dir: root.clone(),
             root,

@@ -725,6 +725,7 @@ dependencies = [
  "base64",
  "crossterm",
  "image",
+ "indexmap",
  "pbkdf2",
  "rand",
  "ratatui",

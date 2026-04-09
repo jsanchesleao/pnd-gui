@@ -45,6 +45,76 @@ pub(super) enum GalleryWorkerMsg {
     Failed(String),
 }
 
+// ── Sort ──────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SortKey {
+    Name,
+    Size,
+    Type,
+    /// Insertion order in the vault index — chronological (oldest first for Asc).
+    Age,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SortDir {
+    Asc,
+    Desc,
+}
+
+impl SortKey {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SortKey::Name => "Name",
+            SortKey::Size => "Size",
+            SortKey::Type => "Type",
+            SortKey::Age  => "Age",
+        }
+    }
+
+    pub(crate) fn next(self) -> Self {
+        match self {
+            SortKey::Name => SortKey::Size,
+            SortKey::Size => SortKey::Type,
+            SortKey::Type => SortKey::Age,
+            SortKey::Age  => SortKey::Name,
+        }
+    }
+}
+
+impl SortDir {
+    pub(crate) fn arrow(self) -> &'static str {
+        match self { SortDir::Asc => "↑", SortDir::Desc => "↓" }
+    }
+
+    pub(crate) fn toggle(self) -> Self {
+        match self { SortDir::Asc => SortDir::Desc, SortDir::Desc => SortDir::Asc }
+    }
+}
+
+/// Map a filename to a category ordinal for type-based sorting (lower = shown first).
+pub(crate) fn file_category(name: &str) -> u8 {
+    let ext = std::path::Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif"
+        | "svg" | "ico" | "avif" | "heic" => 0,
+        "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" => 1,
+        "mp3" | "flac" | "wav" | "ogg" | "aac" | "m4a" | "opus" | "wma" => 2,
+        "pdf" | "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods"
+        | "ppt" | "pptx" | "odp" => 3,
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz4" => 4,
+        "rs" | "py" | "js" | "ts" | "jsx" | "tsx" | "html" | "css" | "json"
+        | "toml" | "yaml" | "yml" | "xml" | "sh" | "bash" | "zsh" | "fish"
+        | "md" | "txt" | "c" | "cpp" | "h" | "hpp" | "go" | "java" | "rb"
+        | "php" | "lua" | "vim" | "swift" | "kt" | "cs" | "sql" => 5,
+        _ => 6,
+    }
+}
+
 // ── Panels ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,6 +153,10 @@ pub(crate) struct BrowseState {
     /// Folders that were created in this session but are still empty (not yet
     /// derivable from the index). Merged into `all_folders` during `refresh`.
     pub(crate) extra_folders: Vec<String>,
+    /// Current sort key for the file list.
+    pub(crate) sort_key: SortKey,
+    /// Current sort direction for the file list.
+    pub(crate) sort_dir: SortDir,
 }
 
 impl BrowseState {
@@ -102,9 +176,23 @@ impl BrowseState {
             status_msg: None,
             status_msg_at: None,
             extra_folders: Vec::new(),
+            sort_key: SortKey::Name,
+            sort_dir: SortDir::Asc,
         };
         s.refresh();
         s
+    }
+
+    /// Advance to the next sort key (cycles Name → Size → Type → Age → Name)
+    /// and reset direction to ascending.
+    pub(crate) fn cycle_sort_key(&mut self) {
+        self.sort_key = self.sort_key.next();
+        self.sort_dir = SortDir::Asc;
+    }
+
+    /// Flip the sort direction without changing the sort key.
+    pub(crate) fn toggle_sort_dir(&mut self) {
+        self.sort_dir = self.sort_dir.toggle();
     }
 
     /// Set a transient status message and record the current time for auto-clearing.
@@ -132,12 +220,45 @@ impl BrowseState {
     pub(crate) fn refresh(&mut self) {
         let cp = self.current_path.clone();
 
-        self.file_uuids = self
+        // Collect (uuid, entry) pairs in index insertion order (= age order).
+        let pairs: Vec<(String, u64, u8)> = self
             .handle
             .entries_in_path(&cp)
             .into_iter()
-            .map(|(uuid, _)| uuid.to_string())
+            .map(|(uuid, e)| (uuid.to_string(), e.size, file_category(&e.name)))
             .collect();
+
+        // Apply sort.
+        let sort_key = self.sort_key;
+        let sort_dir = self.sort_dir;
+        let mut sorted = pairs;
+        match sort_key {
+            SortKey::Age => {
+                // Insertion order is preserved above; just reverse for Desc.
+                if sort_dir == SortDir::Desc { sorted.reverse(); }
+            }
+            _ => {
+                let handle = &self.handle;
+                sorted.sort_by(|(ua, sa, ca), (ub, sb, cb)| {
+                    let ord = match sort_key {
+                        SortKey::Name => {
+                            let na = handle.index.entries.get(ua).map(|e| e.name.as_str()).unwrap_or("");
+                            let nb = handle.index.entries.get(ub).map(|e| e.name.as_str()).unwrap_or("");
+                            na.cmp(nb)
+                        }
+                        SortKey::Size => sa.cmp(sb),
+                        SortKey::Type => ca.cmp(cb).then_with(|| {
+                            let na = handle.index.entries.get(ua).map(|e| e.name.as_str()).unwrap_or("");
+                            let nb = handle.index.entries.get(ub).map(|e| e.name.as_str()).unwrap_or("");
+                            na.cmp(nb)
+                        }),
+                        SortKey::Age => unreachable!(),
+                    };
+                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
+                });
+            }
+        }
+        self.file_uuids = sorted.into_iter().map(|(uuid, _, _)| uuid).collect();
 
         // Recompute folder lists, merging in any session-only extra folders.
         let mut all = collect_all_folders(&self.handle);
@@ -573,9 +694,9 @@ impl VaultState {
             matches!(ext, "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif")
         }
 
-        // Collect (name, parts) for every image entry recursively under `folder`.
+        // Collect (name, size, category, parts) for every image entry under `folder`.
         let folder_str = folder.to_string();
-        let items: Vec<(String, Vec<(String, String)>)> = browse.handle.index.entries
+        let mut items: Vec<(String, u64, u8, Vec<(String, String)>)> = browse.handle.index.entries
             .values()
             .filter(|e| {
                 let in_folder = if folder_str.is_empty() {
@@ -587,6 +708,8 @@ impl VaultState {
             })
             .map(|e| (
                 e.name.clone(),
+                e.size,
+                file_category(&e.name),
                 e.parts.iter().map(|p| (p.uuid.clone(), p.key_base64.clone())).collect(),
             ))
             .collect();
@@ -599,6 +722,34 @@ impl VaultState {
             return;
         }
 
+        // Sort items in the same order as the current file list.
+        let sort_key = browse.sort_key;
+        let sort_dir = browse.sort_dir;
+        match sort_key {
+            SortKey::Age => {
+                // items are already in IndexMap insertion order (age order)
+                if sort_dir == SortDir::Desc { items.reverse(); }
+            }
+            SortKey::Name => {
+                items.sort_by(|(na, _, _, _), (nb, _, _, _)| {
+                    let ord = na.cmp(nb);
+                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
+                });
+            }
+            SortKey::Size => {
+                items.sort_by(|(_, sa, _, _), (_, sb, _, _)| {
+                    let ord = sa.cmp(sb);
+                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
+                });
+            }
+            SortKey::Type => {
+                items.sort_by(|(na, _, ca, _), (nb, _, cb, _)| {
+                    let ord = ca.cmp(cb).then_with(|| na.cmp(nb));
+                    if sort_dir == SortDir::Desc { ord.reverse() } else { ord }
+                });
+            }
+        }
+
         let blobs_dir = browse.handle.blobs_dir.clone();
 
         let (tx, rx) = mpsc::channel::<GalleryWorkerMsg>();
@@ -607,7 +758,7 @@ impl VaultState {
 
         std::thread::spawn(move || {
             let mut images: Vec<(String, Vec<u8>)> = Vec::with_capacity(total);
-            for (done, (name, parts)) in items.into_iter().enumerate() {
+            for (done, (name, _size, _cat, parts)) in items.into_iter().enumerate() {
                 let _ = tx.send(GalleryWorkerMsg::Progress { done, total });
                 let result: Result<Vec<u8>, String> = (|| {
                     let mut out = Vec::new();
@@ -625,7 +776,7 @@ impl VaultState {
                 }
                 // Silently skip images that fail to decrypt.
             }
-            images.sort_by(|a, b| a.0.cmp(&b.0));
+            // Items were pre-sorted; no additional sort needed.
             let _ = tx.send(GalleryWorkerMsg::Ready(images));
         });
     }
@@ -920,7 +1071,7 @@ impl VaultState {
         }
 
         for uuid in &uuids {
-            browse.handle.index.entries.remove(uuid);
+            browse.handle.index.entries.shift_remove(uuid);
             browse.selected_uuids.remove(uuid);
             browse.clipboard.retain(|u| u != uuid);
         }

@@ -330,6 +330,18 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
                 app.vault.start_folder_gallery(&path);
             }
         }
+        KeyCode::Char('o') => {
+            if let Some(b) = &mut app.vault.browse {
+                b.cycle_sort_key();
+                b.refresh();
+            }
+        }
+        KeyCode::Char('O') => {
+            if let Some(b) = &mut app.vault.browse {
+                b.toggle_sort_dir();
+                b.refresh();
+            }
+        }
         KeyCode::Char('G') => app.vault.start_gallery_for_current_path(),
         KeyCode::Char('n') => app.vault.enter_new_folder(),
         KeyCode::Char('r') => app.vault.enter_rename(),

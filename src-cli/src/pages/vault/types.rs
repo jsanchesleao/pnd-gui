@@ -1,6 +1,7 @@
 //! Vault data structures — compatible with the pnd-gui TypeScript types.
 
-use std::{collections::HashMap, io, path::PathBuf};
+use std::{io, path::PathBuf};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 // ── Index ─────────────────────────────────────────────────────────────────
@@ -14,7 +15,9 @@ pub(crate) struct VaultIndex {
     #[serde(rename = "blobsDir", skip_serializing_if = "Option::is_none")]
     pub(crate) blobs_dir: Option<String>,
     /// All file entries, keyed by their UUID string.
-    pub(crate) entries: HashMap<String, VaultEntry>,
+    /// Uses `IndexMap` to preserve the JSON insertion order, which is chronological
+    /// (entries are appended when added). This is the basis for "sort by age".
+    pub(crate) entries: IndexMap<String, VaultEntry>,
 }
 
 /// Metadata for one logical file stored in the vault.
@@ -104,17 +107,15 @@ impl VaultHandle {
         result
     }
 
-    /// Files whose `path` field exactly matches `path`, sorted by name.
+    /// Files whose `path` field exactly matches `path`, in index insertion order.
+    /// Callers are responsible for applying any desired sort (e.g. by name, size, or type).
     pub(crate) fn entries_in_path(&self, path: &str) -> Vec<(&str, &VaultEntry)> {
-        let mut out: Vec<(&str, &VaultEntry)> = self
-            .index
+        self.index
             .entries
             .iter()
             .filter(|(_, e)| e.path == path)
             .map(|(uuid, e)| (uuid.as_str(), e))
-            .collect();
-        out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
-        out
+            .collect()
     }
 }
 
@@ -171,8 +172,8 @@ mod tests {
     }
 
     fn make_handle_with_entries(entries: &[(&str, &str, &str)]) -> VaultHandle {
-        // entries: (uuid, name, path)
-        let mut map = HashMap::new();
+        // entries: (uuid, name, path) — inserted in order, so IndexMap preserves this order
+        let mut map = IndexMap::new();
         for (uuid, name, path) in entries {
             map.insert(uuid.to_string(), make_entry(name, path));
         }
@@ -187,7 +188,7 @@ mod tests {
     #[test]
     fn resolve_blobs_dir_no_sub() {
         let root = PathBuf::from("/my/vault");
-        let index = VaultIndex { version: 1, blobs_dir: None, entries: HashMap::new() };
+        let index = VaultIndex { version: 1, blobs_dir: None, entries: IndexMap::new() };
         let result = VaultHandle::resolve_blobs_dir(&root, &index);
         assert_eq!(result, root);
     }
@@ -198,7 +199,7 @@ mod tests {
         let index = VaultIndex {
             version: 1,
             blobs_dir: Some("blobs".to_string()),
-            entries: HashMap::new(),
+            entries: IndexMap::new(),
         };
         let result = VaultHandle::resolve_blobs_dir(&root, &index);
         assert_eq!(result, PathBuf::from("/my/vault/blobs"));
@@ -274,9 +275,9 @@ mod tests {
         ]);
         let entries = handle.entries_in_path("");
         assert_eq!(entries.len(), 2);
-        // Sorted alphabetically by name
-        assert_eq!(entries[0].1.name, "a.txt");
-        assert_eq!(entries[1].1.name, "b.txt");
+        // Insertion order (age order): b.txt was inserted first
+        assert_eq!(entries[0].1.name, "b.txt");
+        assert_eq!(entries[1].1.name, "a.txt");
     }
 
     #[test]
