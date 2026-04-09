@@ -253,6 +253,16 @@ impl FileBrowser {
         self.load_error = None;
         self.toggled.clear();
 
+        // Current-directory shortcut — only in dir-selection mode so users can
+        // confirm the folder they are already viewing without navigating into a child.
+        if self.select_dirs {
+            self.entries.push(Entry {
+                name: ".".into(),
+                path: self.cwd.clone(),
+                is_dir: true,
+            });
+        }
+
         // Parent shortcut — absent only at filesystem root
         if let Some(parent) = self.cwd.parent() {
             self.entries.push(Entry {
@@ -374,6 +384,11 @@ impl FileBrowser {
                     ListItem::new(Line::from(vec![
                         Span::styled("  [..]   ", Style::default().fg(DIR_COLOR)),
                         Span::styled("parent directory", Style::default().fg(DIM)),
+                    ]))
+                } else if e.name == "." {
+                    ListItem::new(Line::from(vec![
+                        Span::styled("  [.]    ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                        Span::styled("current directory", Style::default().fg(ACCENT)),
                     ]))
                 } else if e.is_dir {
                     ListItem::new(Line::from(vec![

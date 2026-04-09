@@ -487,6 +487,8 @@ with a progress indicator; the browse UI remains responsive.
 6. (done) **Wire into `main.rs`** — add `vault` field, update `apply_browser_selection`,
    add `FileBrowserTarget::VaultDir`
 7. (done) **Create Vault** — add option to create a vault by choosing a directory
-8. **Operations** — rename, delete, move/paste, save
-9. **Preview integration** — decrypt and forward to existing preview pipeline
+8. (done) **Operations** — rename, delete, move/paste, save
+8b. (done) **Add files** — `i` key opens multi-select file browser; encrypts selected files into vault blobs; auto-saves index
+8c. (done) **Export Files** - `e` key opens a folder-select file browser; decrypts selected files and saves to the destination folder.
+9. (done) **Preview integration** — decrypt and forward to existing preview pipeline
 10. **Folder gallery** (optional, last)
