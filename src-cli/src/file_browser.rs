@@ -154,7 +154,7 @@ impl FileBrowser {
     pub fn handle_key(&mut self, code: KeyCode) -> FileBrowserEvent {
         match code {
             // ── Cancel ──────────────────────────────────────────────────────
-            KeyCode::Esc => return FileBrowserEvent::Cancelled,
+            KeyCode::Esc | KeyCode::Char('q') => return FileBrowserEvent::Cancelled,
 
             // ── List movement ───────────────────────────────────────────────
             KeyCode::Up | KeyCode::Char('k') => self.move_by(-1),

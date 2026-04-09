@@ -16,8 +16,10 @@ use std::{io, path::PathBuf, time::Duration};
 mod crypto;
 mod file_browser;
 mod pages;
+mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
+use yazi::{YaziPick, run_yazi};
 use pages::enc_dec::OpStatus;
 
 // ── Palette ────────────────────────────────────────────────────────────────
@@ -68,6 +70,9 @@ pub(crate) struct App {
     /// Active file browser overlay. While `Some`, all key events are routed
     /// to the browser. Set to `None` when the user selects or cancels.
     pub(crate) file_browser: Option<FileBrowser>,
+    /// Pending yazi invocation. When `Some`, the main loop runs yazi before
+    /// the next draw and then clears this field.
+    pub(crate) yazi_pending: Option<YaziPick>,
 }
 
 impl App {
@@ -81,6 +86,7 @@ impl App {
             preview: pages::preview::PreviewState::new(),
             vault: pages::vault::VaultState::new(),
             file_browser: None,
+            yazi_pending: None,
         }
     }
 
@@ -103,11 +109,11 @@ impl App {
         match item {
             MenuItem::EncryptDecrypt => {
                 self.enc_dec = pages::enc_dec::EncDecState::new();
-                self.file_browser = Some(FileBrowser::open(None, FileBrowserTarget::EncDecPath));
+                self.open_file_browser("", FileBrowserTarget::EncDecPath);
             }
             MenuItem::Preview => {
                 self.preview = pages::preview::PreviewState::new();
-                self.file_browser = Some(FileBrowser::open(None, FileBrowserTarget::PreviewPath));
+                self.open_file_browser("", FileBrowserTarget::PreviewPath);
             }
             MenuItem::Vault => {
                 self.vault = pages::vault::VaultState::new();
@@ -121,21 +127,40 @@ impl App {
         self.screen = Screen::Menu;
     }
 
-    /// Open the file browser for a file, starting in the directory inferred from `path_hint`.
+    /// Open a file picker, starting in the directory inferred from `path_hint`.
+    /// Uses yazi if available; falls back to the built-in TUI file browser.
     pub(crate) fn open_file_browser(&mut self, path_hint: &str, target: FileBrowserTarget) {
         let start = infer_start_dir(path_hint);
-        self.file_browser = Some(FileBrowser::open(start.as_deref(), target));
+        if yazi::yazi_available() {
+            self.yazi_pending = Some(YaziPick { target, start_dir: start, multi: false });
+        } else {
+            self.file_browser = Some(FileBrowser::open(start.as_deref(), target));
+        }
     }
 
-    /// Open the file browser in directory-selection mode.
+    /// Open a directory picker.
+    /// Uses yazi if available; falls back to the built-in TUI file browser.
     pub(crate) fn open_file_browser_dir(&mut self, path_hint: &str, target: FileBrowserTarget) {
         let start = infer_start_dir(path_hint);
-        self.file_browser = Some(FileBrowser::open_for_dir(start.as_deref(), target));
+        if yazi::yazi_available() {
+            self.yazi_pending = Some(YaziPick { target, start_dir: start, multi: false });
+        } else {
+            self.file_browser = Some(FileBrowser::open_for_dir(start.as_deref(), target));
+        }
     }
 
-    /// Open the file browser in multi-select mode with a contextual title.
+    /// Open a multi-file picker.
+    /// Uses yazi if available; falls back to the built-in TUI file browser.
     pub(crate) fn open_file_browser_multi(&mut self, start: Option<&std::path::Path>, target: FileBrowserTarget) {
-        self.file_browser = Some(FileBrowser::open_multi(start, target, " Add Files to Vault "));
+        if yazi::yazi_available() {
+            self.yazi_pending = Some(YaziPick {
+                target,
+                start_dir: start.map(|p| p.to_path_buf()),
+                multi: true,
+            });
+        } else {
+            self.file_browser = Some(FileBrowser::open_multi(start, target, " Add Files to Vault "));
+        }
     }
 }
 
@@ -187,6 +212,21 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         // Render vault preview if a vault entry was just decrypted.
         if let pages::vault::Phase::PreviewReady { .. } = &app.vault.phase {
             pages::vault::render_vault_preview(&mut app.vault, terminal);
+        }
+
+        // Run yazi if a pick was requested this iteration.
+        if let Some(pick) = app.yazi_pending.take() {
+            if let Some(event) = run_yazi(terminal, pick.start_dir.as_deref(), pick.multi) {
+                match event {
+                    FileBrowserEvent::Selected(path) => {
+                        apply_browser_selection(&mut app, pick.target, path);
+                    }
+                    FileBrowserEvent::MultiSelected(paths) => {
+                        apply_browser_multi_selection(&mut app, pick.target, paths);
+                    }
+                    FileBrowserEvent::Cancelled | FileBrowserEvent::Pending => {}
+                }
+            }
         }
 
         // ── Draw ────────────────────────────────────────────────────────────
