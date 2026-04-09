@@ -154,40 +154,104 @@ fn creating_path(app: &App) -> &str {
     }
 }
 
+fn creating_path_edit_mode(app: &App) -> bool {
+    match &app.vault.phase {
+        Phase::Creating { path_edit_mode, .. } => *path_edit_mode,
+        _ => false,
+    }
+}
+
 fn handle_creating(app: &mut App, code: KeyCode) {
-    match code {
-        KeyCode::Esc => {
+    let focus = creating_focus(app);
+    let path_edit_mode = creating_path_edit_mode(app);
+
+    // Global Esc: always go back (even in edit mode, exit edit mode first on next press;
+    // but for simplicity mirror the locked screen: Esc in edit mode exits edit mode,
+    // Esc in display mode goes back).
+    if code == KeyCode::Esc {
+        if focus == 0 && path_edit_mode {
+            if let Phase::Creating { path_edit_mode, .. } = &mut app.vault.phase {
+                *path_edit_mode = false;
+            }
+        } else {
             app.vault.phase = Phase::VaultMenu { cursor: 1 };
-            return;
         }
-        KeyCode::Enter if creating_focus(app) == 0 => {
-            let hint = creating_path(app).to_string();
-            app.open_file_browser_dir(&hint, FileBrowserTarget::VaultCreateDir);
-            return;
-        }
-        KeyCode::Enter if creating_focus(app) == 1 => {
-            app.vault.advance_create_focus();
-            return;
-        }
-        _ => {}
+        return;
     }
 
+    // Focus 0, display mode — t/b/y/Enter shortcuts
+    if focus == 0 && !path_edit_mode {
+        match code {
+            KeyCode::Char('t') => {
+                if let Phase::Creating { path_edit_mode, .. } = &mut app.vault.phase {
+                    *path_edit_mode = true;
+                }
+                return;
+            }
+            KeyCode::Char('b') => {
+                let hint = creating_path(app).to_string();
+                app.open_builtin_browser_dir(&hint, FileBrowserTarget::VaultCreateDir);
+                return;
+            }
+            KeyCode::Char('y') if yazi_available() => {
+                let hint = creating_path(app).to_string();
+                app.open_yazi_picker(&hint, FileBrowserTarget::VaultCreateDir);
+                return;
+            }
+            KeyCode::Enter => {
+                let hint = creating_path(app).to_string();
+                app.open_file_browser_dir(&hint, FileBrowserTarget::VaultCreateDir);
+                return;
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                app.vault.advance_create_focus();
+                return;
+            }
+            _ => return,
+        }
+    }
+
+    // Focus 0, edit mode — direct typing
+    if focus == 0 && path_edit_mode {
+        match code {
+            KeyCode::Char(c) => {
+                if let Phase::Creating { vault_path, error, .. } = &mut app.vault.phase {
+                    vault_path.push(c);
+                    *error = None;
+                }
+            }
+            KeyCode::Backspace => {
+                if let Phase::Creating { vault_path, error, .. } = &mut app.vault.phase {
+                    vault_path.pop();
+                    *error = None;
+                }
+            }
+            KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab => {
+                if let Phase::Creating { path_edit_mode, .. } = &mut app.vault.phase {
+                    *path_edit_mode = false;
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Focus 1 and 2
     match code {
         KeyCode::Tab | KeyCode::BackTab => app.vault.advance_create_focus(),
+        KeyCode::Enter if focus == 1 => app.vault.advance_create_focus(),
         KeyCode::Enter => app.vault.start_create(),
         KeyCode::Char(c) => {
-            if let Phase::Creating { vault_path, blobs_dir, password, focus, error, .. } = &mut app.vault.phase {
+            if let Phase::Creating { blobs_dir, password, focus, .. } = &mut app.vault.phase {
                 match *focus {
-                    0 => { vault_path.push(c); *error = None; }
                     1 => { blobs_dir.push(c); }
                     _ => { password.push(c); }
                 }
             }
         }
         KeyCode::Backspace => {
-            if let Phase::Creating { vault_path, blobs_dir, password, focus, error, .. } = &mut app.vault.phase {
+            if let Phase::Creating { blobs_dir, password, focus, .. } = &mut app.vault.phase {
                 match *focus {
-                    0 => { vault_path.pop(); *error = None; }
                     1 => { blobs_dir.pop(); }
                     _ => { password.pop(); }
                 }

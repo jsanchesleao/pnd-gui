@@ -432,6 +432,8 @@ pub(crate) enum Phase {
         blobs_dir: String,
         password: String,
         focus: usize,
+        /// `true` while the vault-path field is in keyboard-edit mode.
+        path_edit_mode: bool,
         error: Option<String>,
     },
     /// Confirm creating a non-existent directory before writing the vault.
@@ -836,15 +838,17 @@ impl VaultState {
             blobs_dir: String::new(),
             password: String::new(),
             focus: 0,
+            path_edit_mode: false,
             error: None,
         };
     }
 
     /// Set vault_path from the directory browser during the Creating flow. Advances focus to blobs_dir.
     pub(crate) fn set_create_path(&mut self, path: &str) {
-        if let Phase::Creating { vault_path, focus, .. } = &mut self.phase {
+        if let Phase::Creating { vault_path, focus, path_edit_mode, .. } = &mut self.phase {
             *vault_path = path.to_string();
             *focus = 1;
+            *path_edit_mode = false;
         }
     }
 
@@ -910,7 +914,7 @@ impl VaultState {
             }
             _ => return,
         };
-        self.phase = Phase::Creating { vault_path, blobs_dir, password, focus: 0, error: None };
+        self.phase = Phase::Creating { vault_path, blobs_dir, password, focus: 0, path_edit_mode: false, error: None };
     }
 
     fn spawn_create(&mut self, vault_path: String, blobs_dir: String, password: String) {
