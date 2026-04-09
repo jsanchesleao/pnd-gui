@@ -275,8 +275,9 @@ mod tests {
 }
 
 /// Write `bytes` to a temp file with the correct extension and open it with
-/// xdg-open asynchronously. The temp file is intentionally leaked in `/tmp`
-/// so the system viewer has time to read it.
+/// the system viewer asynchronously. Uses `xdg-open` on Linux/macOS and
+/// `cmd /C start` on Windows. The temp file is intentionally leaked so the
+/// system viewer has time to read it.
 pub(super) fn open_with_xdg(bytes: &[u8], ext: &str) -> Result<(), String> {
     let mut tmp = Builder::new()
         .prefix("pnd-preview-")
@@ -288,6 +289,14 @@ pub(super) fn open_with_xdg(bytes: &[u8], ext: &str) -> Result<(), String> {
     tmp.flush().map_err(|e| e.to_string())?;
     let (_, path) = tmp.keep().map_err(|e| e.to_string())?;
 
+    #[cfg(target_os = "windows")]
+    Command::new("cmd")
+        .args(["/C", "start", ""])
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("start failed: {e}"))?;
+
+    #[cfg(not(target_os = "windows"))]
     Command::new("xdg-open")
         .arg(&path)
         .spawn()

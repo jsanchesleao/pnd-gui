@@ -80,7 +80,19 @@ pub(super) fn open_with_mpv(
     terminal.clear()?;
 
     match status {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            // On Windows, fall back to the shell's default media handler.
+            #[cfg(target_os = "windows")]
+            {
+                Command::new("cmd")
+                    .args(["/C", "start", ""])
+                    .arg(&path)
+                    .spawn()?;
+                return Ok(true);
+            }
+            #[cfg(not(target_os = "windows"))]
+            Ok(false)
+        }
         Err(e) => Err(e),
         Ok(_) => Ok(true),
     }
