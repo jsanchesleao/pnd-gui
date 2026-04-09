@@ -25,6 +25,19 @@ pub(super) enum AddWorkerMsg {
     Failed(String),
 }
 
+pub(super) enum PreviewWorkerMsg {
+    /// Decrypted bytes ready for rendering, with the file's lowercased extension.
+    Ready(Vec<u8>, String),
+    Failed(String),
+}
+
+pub(super) enum ExportWorkerMsg {
+    Progress { done: usize, total: usize, filename: String },
+    /// Number of files successfully exported.
+    Done(usize),
+    Failed(String),
+}
+
 // ── Panels ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -311,6 +324,12 @@ pub(crate) enum Phase {
     Adding { total: usize, done: usize, current_file: String },
     /// New-folder dialog (overlay on top of Browse).
     NewFolder { parent: String, input: String, error: Option<String> },
+    /// Background file-decrypt for preview in progress (overlay on top of Browse).
+    Previewing { filename: String },
+    /// Decrypted bytes ready; `render_vault_preview` must be called on the main thread.
+    PreviewReady { bytes: Vec<u8>, ext: String },
+    /// Background file-export (decrypt-to-disk) in progress (overlay on top of Browse).
+    Exporting { total: usize, done: usize, current_file: String },
 }
 
 // ── Top-level state ────────────────────────────────────────────────────────
@@ -322,6 +341,12 @@ pub(crate) struct VaultState {
     pub(super) rx: Option<mpsc::Receiver<WorkerMsg>>,
     /// Receiver for the background add-files worker.
     pub(super) add_rx: Option<mpsc::Receiver<AddWorkerMsg>>,
+    /// Receiver for the background preview-decrypt worker.
+    pub(super) preview_rx: Option<mpsc::Receiver<PreviewWorkerMsg>>,
+    /// Receiver for the background export worker.
+    pub(super) export_rx: Option<mpsc::Receiver<ExportWorkerMsg>>,
+    /// UUIDs queued for export, stored while the file-browser is open to pick a dest dir.
+    pub(crate) pending_export_uuids: Vec<String>,
 }
 
 impl VaultState {
@@ -331,6 +356,9 @@ impl VaultState {
             browse: None,
             rx: None,
             add_rx: None,
+            preview_rx: None,
+            export_rx: None,
+            pending_export_uuids: Vec::new(),
         }
     }
 
@@ -354,6 +382,158 @@ impl VaultState {
 
     pub(crate) fn is_adding(&self) -> bool {
         matches!(self.phase, Phase::Adding { .. })
+    }
+
+    pub(crate) fn is_previewing(&self) -> bool {
+        matches!(self.phase, Phase::Previewing { .. } | Phase::PreviewReady { .. })
+    }
+
+    pub(crate) fn is_exporting(&self) -> bool {
+        matches!(self.phase, Phase::Exporting { .. })
+    }
+
+    // ── Preview ─────────────────────────────────────────────────────────────
+
+    /// Decrypt a vault entry in a background thread and transition to `Previewing`.
+    pub(crate) fn start_preview(&mut self, uuid: &str) {
+        let browse = match &self.browse { Some(b) => b, None => return };
+        let entry = match browse.handle.index.entries.get(uuid) {
+            Some(e) => e.clone(),
+            None => return,
+        };
+        let blobs_dir = browse.handle.blobs_dir.clone();
+        let ext = std::path::Path::new(&entry.name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let filename = entry.name.clone();
+
+        let (tx, rx) = mpsc::channel::<PreviewWorkerMsg>();
+        self.preview_rx = Some(rx);
+        self.phase = Phase::Previewing { filename };
+
+        std::thread::spawn(move || {
+            let result: Result<Vec<u8>, String> = (|| {
+                let mut out = Vec::with_capacity(entry.size as usize);
+                for part in &entry.parts {
+                    let blob_path = blobs_dir.join(&part.uuid);
+                    let blob = std::fs::read(&blob_path).map_err(|e| e.to_string())?;
+                    let plain = super::crypto::decrypt_blob_with_key(&blob, &part.key_base64)
+                        .map_err(|e| format!("{e:?}"))?;
+                    out.extend_from_slice(&plain);
+                }
+                Ok(out)
+            })();
+            match result {
+                Ok(bytes) => { let _ = tx.send(PreviewWorkerMsg::Ready(bytes, ext)); }
+                Err(e)    => { let _ = tx.send(PreviewWorkerMsg::Failed(e)); }
+            }
+        });
+    }
+
+    /// Drain messages from the background preview worker.
+    pub(crate) fn poll_preview_progress(&mut self) {
+        if self.preview_rx.is_none() { return; }
+        loop {
+            match self.preview_rx.as_ref().unwrap().try_recv() {
+                Ok(PreviewWorkerMsg::Ready(bytes, ext)) => {
+                    self.preview_rx = None;
+                    self.phase = Phase::PreviewReady { bytes, ext };
+                    break;
+                }
+                Ok(PreviewWorkerMsg::Failed(msg)) => {
+                    self.preview_rx = None;
+                    if let Some(b) = &mut self.browse {
+                        b.set_status(format!("Preview failed: {msg}"));
+                    }
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    // ── Export ──────────────────────────────────────────────────────────────
+
+    /// Decrypt the entries in `pending_export_uuids` to `dest_dir` in a background thread.
+    pub(crate) fn start_export(&mut self, dest_dir: PathBuf) {
+        let uuids = std::mem::take(&mut self.pending_export_uuids);
+        if uuids.is_empty() { return; }
+        let browse = match &self.browse { Some(b) => b, None => return };
+
+        let entries: Vec<(String, super::types::VaultEntry)> = uuids.iter()
+            .filter_map(|u| browse.handle.index.entries.get(u).map(|e| (u.clone(), e.clone())))
+            .collect();
+        let blobs_dir = browse.handle.blobs_dir.clone();
+        let total = entries.len();
+
+        let (tx, rx) = mpsc::channel::<ExportWorkerMsg>();
+        self.export_rx = Some(rx);
+        self.phase = Phase::Exporting { total, done: 0, current_file: String::new() };
+
+        std::thread::spawn(move || {
+            let mut exported = 0usize;
+            for (i, (_uuid, entry)) in entries.iter().enumerate() {
+                let _ = tx.send(ExportWorkerMsg::Progress {
+                    done: i,
+                    total,
+                    filename: entry.name.clone(),
+                });
+                let result: Result<(), String> = (|| {
+                    let mut data = Vec::with_capacity(entry.size as usize);
+                    for part in &entry.parts {
+                        let blob_path = blobs_dir.join(&part.uuid);
+                        let blob = std::fs::read(&blob_path).map_err(|e| e.to_string())?;
+                        let plain = super::crypto::decrypt_blob_with_key(&blob, &part.key_base64)
+                            .map_err(|e| format!("{e:?}"))?;
+                        data.extend_from_slice(&plain);
+                    }
+                    let out_path = dest_dir.join(&entry.name);
+                    std::fs::write(&out_path, &data).map_err(|e| e.to_string())
+                })();
+                match result {
+                    Ok(()) => { exported += 1; }
+                    Err(e) => {
+                        let _ = tx.send(ExportWorkerMsg::Failed(
+                            format!("{}: {e}", entry.name)
+                        ));
+                        return;
+                    }
+                }
+            }
+            let _ = tx.send(ExportWorkerMsg::Done(exported));
+        });
+    }
+
+    /// Drain messages from the background export worker.
+    pub(crate) fn poll_export_progress(&mut self) {
+        if self.export_rx.is_none() { return; }
+        loop {
+            match self.export_rx.as_ref().unwrap().try_recv() {
+                Ok(ExportWorkerMsg::Progress { done, total, filename }) => {
+                    self.phase = Phase::Exporting { done, total, current_file: filename };
+                }
+                Ok(ExportWorkerMsg::Done(n)) => {
+                    self.export_rx = None;
+                    if let Some(b) = &mut self.browse {
+                        b.set_status(format!("Exported {n} file(s)"));
+                    }
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Ok(ExportWorkerMsg::Failed(msg)) => {
+                    self.export_rx = None;
+                    if let Some(b) = &mut self.browse {
+                        b.set_status(format!("Export failed: {msg}"));
+                    }
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
     }
 
     // ── Creating ────────────────────────────────────────────────────────────

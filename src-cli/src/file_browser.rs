@@ -70,6 +70,8 @@ pub enum FileBrowserTarget {
     VaultCreateDir,
     /// Pick one or more files to add to the currently open vault.
     VaultAddFiles,
+    /// Pick a destination directory for exporting (decrypting) vault files.
+    VaultExportDir,
 }
 
 // ── Internal entry ─────────────────────────────────────────────────────────

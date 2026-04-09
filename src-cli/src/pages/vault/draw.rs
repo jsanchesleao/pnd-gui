@@ -66,6 +66,25 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
                 draw_new_folder_overlay(frame, parent, input, error.as_deref());
             }
         }
+        Phase::Previewing { filename } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+                draw_previewing_overlay(frame, filename);
+            }
+        }
+        // PreviewReady is transient: main loop calls render_vault_preview before draw,
+        // so by the time draw runs the phase is already back to Browse.
+        Phase::PreviewReady { .. } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+            }
+        }
+        Phase::Exporting { total, done, current_file } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+                draw_exporting_overlay(frame, *total, *done, current_file);
+            }
+        }
     }
 }
 
@@ -553,7 +572,7 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
         // Build hint string without format!() owning a temporary
         let _ = clip_hint;
-        ("Tab tree    ↑↓/jk navigate    Enter open    Space select    i add    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
+        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
     let line = Span::styled(text, Style::default().fg(color));
@@ -886,6 +905,111 @@ fn draw_adding_overlay(frame: &mut Frame, total: usize, done: usize, current_fil
     frame.render_widget(
         Paragraph::new(Span::styled(
             "Encrypting… please wait",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+        rows[3],
+    );
+}
+
+fn draw_previewing_overlay(frame: &mut Frame, filename: &str) {
+    // height = 2 rows content + 2 borders + 2 margin = 6; use 7 for comfort
+    let area = centered_popup(frame.area(), 55, 7);
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " Decrypting ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1), // filename
+            Constraint::Length(1), // label
+        ])
+        .split(inner);
+
+    let w = rows[0].width as usize;
+    let display = if filename.len() > w {
+        format!("…{}", &filename[filename.len().saturating_sub(w.saturating_sub(1))..])
+    } else {
+        filename.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(display, Style::default().fg(Color::White)))
+            .alignment(Alignment::Center),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Decrypting… please wait",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+        rows[1],
+    );
+}
+
+fn draw_exporting_overlay(frame: &mut Frame, total: usize, done: usize, current_file: &str) {
+    let area = centered_popup(frame.area(), 60, 8);
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " Exporting Files ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1), // current filename
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // progress gauge
+            Constraint::Length(1), // label
+        ])
+        .split(inner);
+
+    let fname_w = rows[0].width as usize;
+    let fname_display = if current_file.len() > fname_w {
+        format!("…{}", &current_file[current_file.len().saturating_sub(fname_w.saturating_sub(1))..])
+    } else {
+        current_file.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(fname_display, Style::default().fg(Color::White)))
+            .alignment(Alignment::Center),
+        rows[0],
+    );
+
+    let ratio = if total == 0 { 0.0 } else { done as f64 / total as f64 };
+    frame.render_widget(
+        Gauge::default()
+            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
+            .ratio(ratio)
+            .label(format!("{done} / {total}")),
+        rows[2],
+    );
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Decrypting… please wait",
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),

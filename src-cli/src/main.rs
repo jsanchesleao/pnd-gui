@@ -175,12 +175,18 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         app.preview.poll_progress();
         app.vault.poll_progress();
         app.vault.poll_add_progress();
+        app.vault.poll_preview_progress();
+        app.vault.poll_export_progress();
         // Clear vault status messages that have been visible for ≥ 3 seconds.
         app.vault.tick(3);
 
         // Render image on the main thread if decryption just completed.
         if let pages::preview::PreviewPhase::PendingRender { .. } = app.preview.phase {
             pages::preview::render_preview(&mut app.preview, terminal);
+        }
+        // Render vault preview if a vault entry was just decrypted.
+        if let pages::vault::Phase::PreviewReady { .. } = &app.vault.phase {
+            pages::vault::render_vault_preview(&mut app.vault, terminal);
         }
 
         // ── Draw ────────────────────────────────────────────────────────────
@@ -206,6 +212,8 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             || matches!(app.preview.phase, pages::preview::PreviewPhase::Decrypting(_))
             || app.vault.is_opening()
             || app.vault.is_adding()
+            || app.vault.is_previewing()
+            || app.vault.is_exporting()
             || app.vault.has_pending_status();
         let has_event = if running {
             event::poll(Duration::from_millis(50))?
@@ -282,6 +290,9 @@ fn apply_browser_selection(app: &mut App, target: FileBrowserTarget, path: PathB
         FileBrowserTarget::VaultAddFiles => {
             // Single file selected without using Space — treat as a one-file add.
             app.vault.start_add(vec![path]);
+        }
+        FileBrowserTarget::VaultExportDir => {
+            app.vault.start_export(path);
         }
     }
 }

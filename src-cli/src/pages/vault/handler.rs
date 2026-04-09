@@ -7,8 +7,12 @@ use crate::file_browser::FileBrowserTarget;
 use super::state::{PanelFocus, Phase};
 
 pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
-    // Block all input while the vault is being opened, created, or adding files
-    if app.vault.is_opening() || app.vault.is_adding() { return; }
+    // Block all input while a background operation is running
+    if app.vault.is_opening() || app.vault.is_adding()
+        || app.vault.is_previewing() || app.vault.is_exporting()
+    {
+        return;
+    }
 
     match &app.vault.phase {
         Phase::VaultMenu { .. }       => handle_vault_menu(app, code),
@@ -22,6 +26,9 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
         Phase::NewFolder { .. }       => handle_new_folder(app, code),
         Phase::Opening(_)             => {} // blocked above
         Phase::Adding { .. }          => {} // blocked above
+        Phase::Previewing { .. }      => {} // blocked above
+        Phase::PreviewReady { .. }    => {} // transient — handled by main loop
+        Phase::Exporting { .. }       => {} // blocked above
     }
 }
 
@@ -207,8 +214,14 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
                 .and_then(|b| b.cursor_folder().map(str::to_string));
             if let Some(name) = folder {
                 if let Some(b) = &mut app.vault.browse { b.navigate_into(&name); }
+            } else {
+                // Cursor is on a file — decrypt and preview it
+                let uuid = app.vault.browse.as_ref()
+                    .and_then(|b| b.cursor_file_uuid().map(str::to_string));
+                if let Some(uuid) = uuid {
+                    app.vault.start_preview(&uuid);
+                }
             }
-            // Future: file preview hook goes here
         }
         KeyCode::Char('h') | KeyCode::Backspace | KeyCode::Left | KeyCode::Esc => {
             navigate_up_or_lock(app);
@@ -230,6 +243,16 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
             // Open multi-select file browser to add files to the vault
             let start = std::env::current_dir().ok();
             app.open_file_browser_multi(start.as_deref(), FileBrowserTarget::VaultAddFiles);
+        }
+        KeyCode::Char('e') => {
+            // Export (decrypt to disk) the effective selection
+            let uuids = app.vault.browse.as_ref()
+                .map(|b| b.effective_selection())
+                .unwrap_or_default();
+            if !uuids.is_empty() {
+                app.vault.pending_export_uuids = uuids;
+                app.open_file_browser_dir("", FileBrowserTarget::VaultExportDir);
+            }
         }
         KeyCode::Char('n') => app.vault.enter_new_folder(),
         KeyCode::Char('r') => app.vault.enter_rename(),
