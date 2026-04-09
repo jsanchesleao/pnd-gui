@@ -185,30 +185,38 @@ Behaviour after decryption mirrors `pnd-cli -p` (Kitty / mpv / bat / gallery).
 ### Vault — add a file
 
 ```
-pnd-cli --vault-add <file> [<vault-path>] [<vault-dir>]
+pnd-cli --vault-add <file>... [--vault-path <vault-path>] [<vault-dir>]
 ```
 
-Encrypts `<file>` and adds it to the vault.
-- `<vault-path>` is the virtual folder inside the vault where the file will be placed
+Encrypts one or more files and adds them to the vault.
+- `--vault-path` is the virtual folder inside the vault where the files will be placed
   (e.g. `photos/summer`). Defaults to root (`""`).
 - `<vault-dir>` defaults to the current directory.
+- When adding a single file, `<vault-path>` and `<vault-dir>` may also be given as
+  positional arguments for convenience: `pnd-cli --vault-add file [<vault-path>] [<vault-dir>]`.
+  When multiple files are given, `--vault-path` and `--vault-dir` must be named flags to
+  avoid ambiguity.
 
 The index is saved atomically after a successful add (write to `.tmp` then rename).
+If multiple files are given and one fails, files added before the failure are kept; the
+failed file and any remaining files are skipped.
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
+| `--vault-path <path>` | Virtual folder inside the vault (default: root) |
+| `--vault-dir <dir>` | Vault directory (default: `.`) |
 | `-f`, `--force` | If a file with the same name already exists at `<vault-path>`, replace it |
 
 **Edge cases:**
 
 | Situation | Behaviour |
 |-----------|-----------|
-| `<file>` does not exist | Exit 2 |
-| Name collision in vault and `--force` not given | Print error: "A file named `<name>` already exists at `<vault-path>`", exit 4 |
-| `<file>` is a directory | Exit 3 (directories not supported; suggest adding files individually) |
-| Disk full while writing blob | Partial blob is deleted; index is not updated; exit 2 |
+| A `<file>` does not exist | Print error for that file, skip it, continue with the rest; exit 2 at the end |
+| Name collision and `--force` not given | Print error: "A file named `<name>` already exists at `<vault-path>`", skip it; exit 4 |
+| `<file>` is a directory | Skip with exit 3 message (directories not supported) |
+| Disk full while writing blob | Partial blob is deleted; index is not updated for that file; exit 2 |
 | Wrong password | Exit 1 |
 | `<vault-path>` contains a leading or trailing `/` | Normalise silently (strip them) |
 
@@ -385,25 +393,91 @@ recovery in mind (partial write → index not updated).
 
 ---
 
-## Open Questions
+## Decisions
 
-1. **`clap` vs manual parsing**: `clap` gives `--help` generation, validation, and shell
-   completion for free but adds a compile-time dependency. Manual parsing keeps the
-   binary lean. Decide before Phase 1.
+1. **Argument parsing: use `clap`**. The command surface is large enough that manual
+   parsing would duplicate validation, `--help` generation, and error messages that
+   `clap` provides for free. Compile-time cost is acceptable; binary size increase
+   (~300–500 KB) is fine for a CLI tool.
 
-2. **`PND_PASSWORD` env var**: Convenient for scripting but a security risk if the
-   environment is visible to other processes. Consider requiring an explicit opt-in flag
-   (e.g. `--allow-env-password`) before reading it.
+2. **`PND_PASSWORD` env var: honour it with a stderr warning**. An explicit opt-in flag
+   (`--allow-env-password`) would add scripting friction without meaningful security
+   benefit — anyone who can set env vars already has equivalent access. The warning is
+   sufficient disclosure.
 
-3. **Multiple files**: `--vault-add` taking a single file is a limitation. A glob or
-   repeated flag (`--vault-add file1 --vault-add file2`) would be more useful. Defer to
-   a later iteration.
+3. **Multiple files for `--vault-add`: variadic positionals**. `pnd-cli --vault-add
+   file1.jpg file2.pdf` is supported. To avoid positional ambiguity when multiple files
+   are given, `--vault-path` and `--vault-dir` must be named flags in that case. Single-
+   file invocations retain positional convenience. See the `--vault-add` section above.
 
-4. **`--vault-dir` as a default from config**: A `~/.config/pnd/config.toml` or
-   `PND_VAULT` env var pointing to the default vault directory would avoid repeating
-   the path. Out of scope for the initial implementation but worth noting.
+4. **`--vault-dir` default from config: out of scope**. The planned future mechanism is
+   a `PND_VAULT` env var (consistent with `PND_PASSWORD`). No config file in the initial
+   implementation.
 
-5. **Progress output in non-interactive mode**: For large files, a simple progress line
-   (`Encrypting… 45%\r`) on stderr keeps the UX reasonable without requiring the TUI.
-   Use `\r` to overwrite in place on a TTY; suppress entirely when stderr is not a TTY
-   (i.e. when piped).
+5. **Progress in non-interactive mode**: write `Encrypting… 45%\r` to stderr on a TTY;
+   suppress entirely when stderr is not a TTY (piped/redirected). Already reflected in
+   the roadmap.
+
+---
+
+## Implementation Checklist
+
+### Phase 1 — Argument parsing skeleton
+- [ ] Add `clap` to `Cargo.toml`
+- [ ] Define top-level `Cli` struct with all subcommands/flags
+- [ ] Zero args → launch TUI (existing behaviour, no change)
+- [ ] `--help` prints usage and exits 0
+- [ ] `--version` prints version string and exits 0
+- [ ] Unknown flags exit 3
+
+### Phase 2 — Single-file encrypt/decrypt (non-interactive)
+- [ ] Password prompt (hidden stdin)
+- [ ] `PND_PASSWORD` env var support with stderr warning
+- [ ] Auto-detect encrypt vs decrypt from `.lock` extension
+- [ ] Default output path logic (append / strip `.lock`)
+- [ ] `-o <path>` override for output path
+- [ ] `-f` / `--force` to allow overwriting existing output
+- [ ] Exit codes: 0 success, 1 wrong password, 2 I/O error, 3 bad args, 4 file exists
+- [ ] Partial output deleted on failure
+- [ ] Progress line on stderr when stderr is a TTY (`\r` overwrite)
+
+### Phase 3 — `-t` / `--tui` flag
+- [ ] `pnd-cli -t <file>` opens TUI EncDec screen with path pre-loaded
+- [ ] `pnd-cli -p -t <file>` opens TUI Preview screen with path pre-loaded
+- [ ] `-o` ignored with a warning when combined with `-t`
+
+### Phase 4 — Preview non-interactive (`pnd-cli -p <file>`)
+- [ ] Decrypt to memory (never to disk)
+- [ ] Plain (non-encrypted) file bypasses password prompt and crypto
+- [ ] Dispatch to existing `render_preview` pipeline (Kitty / mpv / bat / gallery)
+- [ ] Graceful messages for unsupported type, missing mpv, non-Kitty terminal
+- [ ] Ctrl-C during decrypt leaves no bytes on disk; exit 130
+
+### Phase 5 — `--vault` (open vault in TUI)
+- [ ] Parse optional `<vault-dir>` (default `.`)
+- [ ] Validate directory exists and contains `index.lock`
+- [ ] Prompt for password, call `start_unlock()`
+- [ ] Launch TUI event loop starting on the Vault screen
+
+### Phase 6 — `--vault-list`
+- [ ] Decrypt `index.lock`, print entries (path, size) one per line
+- [ ] `--json` flag outputs a JSON array
+- [ ] `--path <vault-path>` filters to a virtual subfolder
+- [ ] Empty vault prints nothing / `[]`; exit 0
+
+### Phase 7 — `--vault-preview` and `--vault-export`
+- [ ] `--vault-preview`: decrypt blob to memory, dispatch to `render_preview`
+- [ ] `--vault-export`: decrypt blob, write to `--dest` dir (default `.`)
+- [ ] `--vault-export` respects `-f` / `--force` for collision handling
+- [ ] Shared "decrypt blob" logic extracted into a standalone function
+
+### Phase 8 — `--vault-add`
+- [ ] Accept one or more `<file>` arguments
+- [ ] `--vault-path` and `--vault-dir` as named flags when multiple files are given
+- [ ] Single-file convenience: positional `<vault-path>` and `<vault-dir>`
+- [ ] Read and parse existing `index.lock`
+- [ ] Collision detection; `-f` / `--force` to replace
+- [ ] Write blob UUID file atomically
+- [ ] Save updated index atomically (`.tmp` → rename)
+- [ ] On multi-file add, keep successful adds even if later files fail
+- [ ] `PND_VAULT` env var recognised as default vault dir (future, note only)
