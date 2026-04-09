@@ -1,3 +1,4 @@
+use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -11,9 +12,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
-use std::{io, path::PathBuf, time::Duration};
+use std::{io, path::PathBuf, process, time::Duration};
 
+mod cli;
 mod crypto;
+mod enc_dec_cli;
 mod file_browser;
 mod pages;
 mod yazi;
@@ -187,6 +190,41 @@ fn infer_start_dir(hint: &str) -> Option<PathBuf> {
 // ── Main ───────────────────────────────────────────────────────────────────
 
 fn main() -> io::Result<()> {
+    let cli = match cli::Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            let _ = e.print();
+            let code = match e.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => 0,
+                _ => 3,
+            };
+            process::exit(code);
+        }
+    };
+
+    // Zero args (or just --tui with nothing else) → launch TUI.
+    if cli.is_tui_mode() || (cli.tui && cli.files.is_empty()) {
+        return run_tui();
+    }
+
+    // ── Dispatch non-interactive modes ────────────────────────────────────
+    let has_vault_cmd = cli.vault.is_some()
+        || cli.vault_list.is_some()
+        || cli.vault_preview.is_some()
+        || cli.vault_export.is_some()
+        || !cli.vault_add.is_empty();
+
+    if !cli.files.is_empty() && !cli.preview_mode && !has_vault_cmd {
+        // Phase 2: single-file encrypt / decrypt (non-interactive)
+        enc_dec_cli::run(&cli);
+    }
+
+    // Remaining modes are implemented in later phases.
+    eprintln!("error: this mode is not yet implemented");
+    process::exit(3);
+}
+
+fn run_tui() -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
