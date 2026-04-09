@@ -253,6 +253,7 @@ fn handle_browse_tree(app: &mut App, code: KeyCode) {
             navigate_up_or_lock(app);
         }
         KeyCode::Char('g') => app.vault.start_gallery_for_tree_cursor(),
+        KeyCode::Char('G') => app.vault.start_gallery_for_current_path(),
         KeyCode::Char('s') => app.vault.save(),
         _ => {}
     }
@@ -329,6 +330,7 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
                 app.vault.start_folder_gallery(&path);
             }
         }
+        KeyCode::Char('G') => app.vault.start_gallery_for_current_path(),
         KeyCode::Char('n') => app.vault.enter_new_folder(),
         KeyCode::Char('r') => app.vault.enter_rename(),
         KeyCode::Char('d') => app.vault.enter_delete(),

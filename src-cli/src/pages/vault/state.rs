@@ -639,6 +639,15 @@ impl VaultState {
         self.start_folder_gallery(&folder);
     }
 
+    /// Start the gallery for the folder currently being browsed (current_path).
+    pub(crate) fn start_gallery_for_current_path(&mut self) {
+        let folder = match &self.browse {
+            Some(b) => b.current_path.clone(),
+            None => return,
+        };
+        self.start_folder_gallery(&folder);
+    }
+
     /// Drain messages from the background gallery worker.
     pub(crate) fn poll_gallery_progress(&mut self) {
         if self.gallery_rx.is_none() { return; }

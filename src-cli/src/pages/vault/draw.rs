@@ -626,7 +626,7 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
         // Build hint string without format!() owning a temporary
         let _ = clip_hint;
-        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    g gallery    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
+        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    g folder gallery    G current gallery    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
     let line = Span::styled(text, Style::default().fg(color));
