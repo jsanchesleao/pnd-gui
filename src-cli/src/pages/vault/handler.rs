@@ -11,6 +11,7 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
     // Block all input while a background operation is running
     if app.vault.is_opening() || app.vault.is_adding()
         || app.vault.is_previewing() || app.vault.is_exporting()
+        || app.vault.is_loading_gallery()
     {
         return;
     }
@@ -30,6 +31,8 @@ pub(crate) fn handle_vault(app: &mut App, code: KeyCode) {
         Phase::Previewing { .. }      => {} // blocked above
         Phase::PreviewReady { .. }    => {} // transient — handled by main loop
         Phase::Exporting { .. }       => {} // blocked above
+        Phase::LoadingGallery { .. }  => {} // blocked above
+        Phase::GalleryReady { .. }    => {} // transient — handled by main loop
     }
 }
 
@@ -249,6 +252,7 @@ fn handle_browse_tree(app: &mut App, code: KeyCode) {
         KeyCode::Esc | KeyCode::Char('q') => {
             navigate_up_or_lock(app);
         }
+        KeyCode::Char('g') => app.vault.start_gallery_for_tree_cursor(),
         KeyCode::Char('s') => app.vault.save(),
         _ => {}
     }
@@ -308,6 +312,21 @@ fn handle_browse_list(app: &mut App, code: KeyCode) {
             if !uuids.is_empty() {
                 app.vault.pending_export_uuids = uuids;
                 app.open_file_browser_dir("", FileBrowserTarget::VaultExportDir);
+            }
+        }
+        KeyCode::Char('g') => {
+            // Gallery: show all images recursively under the highlighted folder.
+            let folder_full_path = app.vault.browse.as_ref().and_then(|b| {
+                b.cursor_folder().map(|name| {
+                    if b.current_path.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{}/{}", b.current_path, name)
+                    }
+                })
+            });
+            if let Some(path) = folder_full_path {
+                app.vault.start_folder_gallery(&path);
             }
         }
         KeyCode::Char('n') => app.vault.enter_new_folder(),

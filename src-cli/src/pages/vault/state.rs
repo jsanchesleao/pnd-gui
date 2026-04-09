@@ -38,6 +38,13 @@ pub(super) enum ExportWorkerMsg {
     Failed(String),
 }
 
+pub(super) enum GalleryWorkerMsg {
+    Progress { done: usize, total: usize },
+    /// All images decrypted; payload is `(entry name, raw bytes)` sorted by name.
+    Ready(Vec<(String, Vec<u8>)>),
+    Failed(String),
+}
+
 // ── Panels ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -332,6 +339,10 @@ pub(crate) enum Phase {
     PreviewReady { bytes: Vec<u8>, ext: String },
     /// Background file-export (decrypt-to-disk) in progress (overlay on top of Browse).
     Exporting { total: usize, done: usize, current_file: String },
+    /// Background decryption of folder images for the gallery in progress.
+    LoadingGallery { folder: String, done: usize, total: usize },
+    /// All gallery images decrypted; `render_vault_gallery` must be called on the main thread.
+    GalleryReady { images: Vec<(String, Vec<u8>)> },
 }
 
 // ── Top-level state ────────────────────────────────────────────────────────
@@ -347,6 +358,8 @@ pub(crate) struct VaultState {
     pub(super) preview_rx: Option<mpsc::Receiver<PreviewWorkerMsg>>,
     /// Receiver for the background export worker.
     pub(super) export_rx: Option<mpsc::Receiver<ExportWorkerMsg>>,
+    /// Receiver for the background gallery-load worker.
+    pub(super) gallery_rx: Option<mpsc::Receiver<GalleryWorkerMsg>>,
     /// UUIDs queued for export, stored while the file-browser is open to pick a dest dir.
     pub(crate) pending_export_uuids: Vec<String>,
 }
@@ -360,6 +373,7 @@ impl VaultState {
             add_rx: None,
             preview_rx: None,
             export_rx: None,
+            gallery_rx: None,
             pending_export_uuids: Vec::new(),
         }
     }
@@ -529,6 +543,122 @@ impl VaultState {
                     self.export_rx = None;
                     if let Some(b) = &mut self.browse {
                         b.set_status(format!("Export failed: {msg}"));
+                    }
+                    self.phase = Phase::Browse;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    // ── Gallery ─────────────────────────────────────────────────────────────
+
+    pub(crate) fn is_loading_gallery(&self) -> bool {
+        matches!(self.phase, Phase::LoadingGallery { .. })
+    }
+
+    /// Collect all image entries recursively under `folder` and decrypt them in a
+    /// background thread. Transitions to `LoadingGallery` while running, then
+    /// `GalleryReady` when all images are in memory.
+    pub(crate) fn start_folder_gallery(&mut self, folder: &str) {
+        let browse = match &self.browse { Some(b) => b, None => return };
+
+        fn is_img(name: &str) -> bool {
+            let lower = name.to_ascii_lowercase();
+            let ext = std::path::Path::new(&lower)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            matches!(ext, "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif")
+        }
+
+        // Collect (name, parts) for every image entry recursively under `folder`.
+        let folder_str = folder.to_string();
+        let items: Vec<(String, Vec<(String, String)>)> = browse.handle.index.entries
+            .values()
+            .filter(|e| {
+                let in_folder = if folder_str.is_empty() {
+                    true
+                } else {
+                    e.path == folder_str || e.path.starts_with(&format!("{folder_str}/"))
+                };
+                in_folder && is_img(&e.name)
+            })
+            .map(|e| (
+                e.name.clone(),
+                e.parts.iter().map(|p| (p.uuid.clone(), p.key_base64.clone())).collect(),
+            ))
+            .collect();
+
+        let total = items.len();
+        if total == 0 {
+            if let Some(b) = &mut self.browse {
+                b.set_status("No images found in folder".to_string());
+            }
+            return;
+        }
+
+        let blobs_dir = browse.handle.blobs_dir.clone();
+
+        let (tx, rx) = mpsc::channel::<GalleryWorkerMsg>();
+        self.gallery_rx = Some(rx);
+        self.phase = Phase::LoadingGallery { folder: folder.to_string(), done: 0, total };
+
+        std::thread::spawn(move || {
+            let mut images: Vec<(String, Vec<u8>)> = Vec::with_capacity(total);
+            for (done, (name, parts)) in items.into_iter().enumerate() {
+                let _ = tx.send(GalleryWorkerMsg::Progress { done, total });
+                let result: Result<Vec<u8>, String> = (|| {
+                    let mut out = Vec::new();
+                    for (uuid, key_b64) in &parts {
+                        let blob = std::fs::read(blobs_dir.join(uuid))
+                            .map_err(|e| e.to_string())?;
+                        let plain = super::crypto::decrypt_blob_with_key(&blob, key_b64)
+                            .map_err(|e| format!("{e:?}"))?;
+                        out.extend_from_slice(&plain);
+                    }
+                    Ok(out)
+                })();
+                if let Ok(bytes) = result {
+                    images.push((name, bytes));
+                }
+                // Silently skip images that fail to decrypt.
+            }
+            images.sort_by(|a, b| a.0.cmp(&b.0));
+            let _ = tx.send(GalleryWorkerMsg::Ready(images));
+        });
+    }
+
+    /// Start the gallery for the folder currently selected in the tree panel.
+    pub(crate) fn start_gallery_for_tree_cursor(&mut self) {
+        let folder = match &self.browse {
+            Some(b) => b.all_folders.get(b.tree_cursor).cloned().unwrap_or_default(),
+            None => return,
+        };
+        self.start_folder_gallery(&folder);
+    }
+
+    /// Drain messages from the background gallery worker.
+    pub(crate) fn poll_gallery_progress(&mut self) {
+        if self.gallery_rx.is_none() { return; }
+        loop {
+            match self.gallery_rx.as_ref().unwrap().try_recv() {
+                Ok(GalleryWorkerMsg::Progress { done, total }) => {
+                    if let Phase::LoadingGallery { done: d, .. } = &mut self.phase {
+                        *d = done;
+                        let _ = total; // already in phase
+                    }
+                }
+                Ok(GalleryWorkerMsg::Ready(images)) => {
+                    self.gallery_rx = None;
+                    self.phase = Phase::GalleryReady { images };
+                    break;
+                }
+                Ok(GalleryWorkerMsg::Failed(msg)) => {
+                    self.gallery_rx = None;
+                    if let Some(b) = &mut self.browse {
+                        b.set_status(format!("Gallery failed: {msg}"));
                     }
                     self.phase = Phase::Browse;
                     break;

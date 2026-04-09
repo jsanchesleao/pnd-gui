@@ -218,6 +218,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         app.vault.poll_add_progress();
         app.vault.poll_preview_progress();
         app.vault.poll_export_progress();
+        app.vault.poll_gallery_progress();
         // Clear vault status messages that have been visible for ≥ 3 seconds.
         app.vault.tick(3);
 
@@ -228,6 +229,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
         // Render vault preview if a vault entry was just decrypted.
         if let pages::vault::Phase::PreviewReady { .. } = &app.vault.phase {
             pages::vault::render_vault_preview(&mut app.vault, terminal);
+        }
+        // Render vault folder gallery if all images are loaded.
+        if let pages::vault::Phase::GalleryReady { .. } = &app.vault.phase {
+            pages::vault::render_vault_gallery(&mut app.vault, terminal);
         }
 
         // Run yazi if a pick was requested this iteration.
@@ -270,6 +275,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> 
             || app.vault.is_adding()
             || app.vault.is_previewing()
             || app.vault.is_exporting()
+            || app.vault.is_loading_gallery()
             || app.vault.has_pending_status();
         let has_event = if running {
             event::poll(Duration::from_millis(50))?

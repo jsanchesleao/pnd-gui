@@ -86,6 +86,19 @@ pub(crate) fn draw_vault(frame: &mut Frame, state: &VaultState) {
                 draw_exporting_overlay(frame, *total, *done, current_file);
             }
         }
+        Phase::LoadingGallery { folder, done, total } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+                draw_loading_gallery_overlay(frame, folder, *done, *total);
+            }
+        }
+        // GalleryReady is transient: main loop calls render_vault_gallery before draw,
+        // so by the time draw runs the phase is already back to Browse.
+        Phase::GalleryReady { .. } => {
+            if let Some(browse) = &state.browse {
+                draw_browse(frame, browse, None);
+            }
+        }
     }
 }
 
@@ -613,7 +626,7 @@ fn draw_browse_hint(frame: &mut Frame, browse: &BrowseState, area: Rect) {
         let clip_hint = if !browse.clipboard.is_empty() { "  p paste" } else { "" };
         // Build hint string without format!() owning a temporary
         let _ = clip_hint;
-        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
+        ("Tab tree    ↑↓/jk navigate    Enter open/preview    Space select    g gallery    i add    e export    n folder    r rename    d delete    x cut    p paste    m move    s save    h/Esc up", DIM)
     };
 
     let line = Span::styled(text, Style::default().fg(color));
@@ -1051,6 +1064,65 @@ fn draw_exporting_overlay(frame: &mut Frame, total: usize, done: usize, current_
     frame.render_widget(
         Paragraph::new(Span::styled(
             "Decrypting… please wait",
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+        rows[3],
+    );
+}
+
+fn draw_loading_gallery_overlay(frame: &mut Frame, folder: &str, done: usize, total: usize) {
+    let area = centered_popup(frame.area(), 60, 8);
+    frame.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " Loading Gallery ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1), // folder name
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // progress gauge
+            Constraint::Length(1), // label
+        ])
+        .split(inner);
+
+    let folder_display = if folder.is_empty() { "/" } else { folder };
+    let folder_w = rows[0].width as usize;
+    let folder_display = if folder_display.len() > folder_w {
+        format!("…{}", &folder_display[folder_display.len().saturating_sub(folder_w.saturating_sub(1))..])
+    } else {
+        folder_display.to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(folder_display, Style::default().fg(Color::White)))
+            .alignment(Alignment::Center),
+        rows[0],
+    );
+
+    let ratio = if total == 0 { 0.0 } else { done as f64 / total as f64 };
+    frame.render_widget(
+        Gauge::default()
+            .gauge_style(Style::default().fg(ACCENT).bg(DIM))
+            .ratio(ratio)
+            .label(format!("{done} / {total}")),
+        rows[2],
+    );
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "Decrypting images… please wait",
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),

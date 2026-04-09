@@ -13,7 +13,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, io::{Read, Write as _}};
 
-pub(super) enum GalleryOutcome {
+pub(crate) enum GalleryOutcome {
     /// Gallery was displayed inline; carries the total image count.
     Shown(usize),
     /// ZIP opened with the system file handler (xdg-open).
@@ -38,7 +38,7 @@ pub(super) fn show_gallery(
 
 // ── ZIP extraction ─────────────────────────────────────────────────────────
 
-fn is_image_entry(name: &str) -> bool {
+pub(crate) fn is_image_entry(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let ext = std::path::Path::new(&lower)
         .extension()
@@ -90,8 +90,20 @@ fn show_gallery_kitty(
     if entries.is_empty() {
         return Ok(GalleryOutcome::NoImages);
     }
+    show_images_kitty(terminal, &entries)
+}
 
-    let count = entries.len();
+/// Display a pre-loaded slice of `(filename, raw image bytes)` as an interactive
+/// Kitty inline gallery. Suspends ratatui, runs the navigation loop, then resumes.
+pub(crate) fn show_images_kitty(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    images: &[(String, Vec<u8>)],
+) -> io::Result<GalleryOutcome> {
+    if images.is_empty() {
+        return Ok(GalleryOutcome::NoImages);
+    }
+
+    let count = images.len();
     let mut idx = 0usize;
 
     // Suspend ratatui so we can draw directly to the normal screen buffer.
@@ -99,7 +111,7 @@ fn show_gallery_kitty(
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
     loop {
-        let (name, img_bytes) = &entries[idx];
+        let (name, img_bytes) = &images[idx];
         let ext = entry_ext(name);
 
         let mut stdout = io::stdout();

@@ -1,7 +1,7 @@
 mod draw;
-mod gallery;
+pub(crate) mod gallery;
 mod handler;
-mod image;
+pub(crate) mod image;
 mod media;
 mod state;
 mod text;

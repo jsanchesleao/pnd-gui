@@ -62,3 +62,32 @@ pub(crate) fn render_vault_preview(
         if !msg.is_empty() { b.set_status(msg); }
     }
 }
+
+/// Called from the main event loop when the vault phase is `GalleryReady`.
+/// Pulls the decrypted images out, runs the interactive gallery, and returns
+/// the vault to `Browse`, optionally setting a status message.
+pub(crate) fn render_vault_gallery(
+    vault: &mut VaultState,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+) {
+    let images = match mem::replace(&mut vault.phase, Phase::Browse) {
+        Phase::GalleryReady { images } => images,
+        other => { vault.phase = other; return; }
+    };
+
+    use crate::pages::preview::gallery::GalleryOutcome;
+    let msg: String = if crate::pages::preview::image::supports_kitty() {
+        match crate::pages::preview::gallery::show_images_kitty(terminal, &images) {
+            Ok(GalleryOutcome::Shown(n)) => format!("Gallery: {n} image(s) shown"),
+            Ok(GalleryOutcome::NoImages) => "No images to display".into(),
+            Ok(GalleryOutcome::XdgOpened) => String::new(),
+            Err(e) => format!("Gallery error: {e}"),
+        }
+    } else {
+        "Gallery requires a Kitty-compatible terminal".into()
+    };
+
+    if let Some(b) = &mut vault.browse {
+        if !msg.is_empty() { b.set_status(msg); }
+    }
+}

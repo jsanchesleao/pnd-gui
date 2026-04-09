@@ -19,7 +19,7 @@ pub(super) fn is_image_ext(ext: &str) -> bool {
 
 /// Returns true when the running terminal supports the Kitty graphics protocol.
 /// Checks `$TERM` and `$TERM_PROGRAM` environment variables.
-pub(super) fn supports_kitty() -> bool {
+pub(crate) fn supports_kitty() -> bool {
     let term = std::env::var("TERM").unwrap_or_default();
     let prog = std::env::var("TERM_PROGRAM").unwrap_or_default().to_ascii_lowercase();
     term == "xterm-kitty" || prog == "kitty" || prog == "wezterm"
