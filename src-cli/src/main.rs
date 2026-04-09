@@ -62,6 +62,16 @@ pub(crate) enum Screen {
     Page(MenuItem),
 }
 
+// ── TuiPreload ─────────────────────────────────────────────────────────────
+
+/// Pre-loaded state passed from the CLI into the TUI event loop.
+enum TuiPreload {
+    /// Open the Encrypt/Decrypt page with this file path already filled in.
+    EncDec(String),
+    /// Open the Preview page with this file path already filled in.
+    Preview(String),
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 
 pub(crate) struct App {
@@ -202,9 +212,25 @@ fn main() -> io::Result<()> {
         }
     };
 
-    // Zero args (or just --tui with nothing else) → launch TUI.
-    if cli.is_tui_mode() || (cli.tui && cli.files.is_empty()) {
-        return run_tui();
+    // ── Phase 3: --tui flag — launch TUI with optional preload ───────────
+    if cli.tui {
+        if cli.output.is_some() {
+            eprintln!("warning: -o is ignored when --tui is given");
+        }
+        let preload = cli.files.first().map(|f| {
+            let path = f.to_string_lossy().into_owned();
+            if cli.preview_mode {
+                TuiPreload::Preview(path)
+            } else {
+                TuiPreload::EncDec(path)
+            }
+        });
+        return run_tui(preload);
+    }
+
+    // Zero args → launch TUI (no preload).
+    if cli.is_tui_mode() {
+        return run_tui(None);
     }
 
     // ── Dispatch non-interactive modes ────────────────────────────────────
@@ -224,7 +250,7 @@ fn main() -> io::Result<()> {
     process::exit(3);
 }
 
-fn run_tui() -> io::Result<()> {
+fn run_tui(preload: Option<TuiPreload>) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -232,7 +258,7 @@ fn run_tui() -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     terminal.clear()?;
-    let result = run(&mut terminal);
+    let result = run(&mut terminal, preload);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -241,8 +267,24 @@ fn run_tui() -> io::Result<()> {
     result
 }
 
-fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result<()> {
+fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, preload: Option<TuiPreload>) -> io::Result<()> {
     let mut app = App::new();
+
+    // Apply any pre-loaded state from CLI arguments (Phase 3).
+    if let Some(pre) = preload {
+        match pre {
+            TuiPreload::EncDec(path) => {
+                app.enc_dec.path = path;
+                app.enc_dec.focus = 1; // advance to password field
+                app.screen = Screen::Page(MenuItem::EncryptDecrypt);
+            }
+            TuiPreload::Preview(path) => {
+                app.preview.path = path;
+                app.preview.focus = 1; // advance to password field
+                app.screen = Screen::Page(MenuItem::Preview);
+            }
+        }
+    }
 
     loop {
         // Drain progress messages from the background workers before each draw.
