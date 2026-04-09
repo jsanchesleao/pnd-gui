@@ -121,10 +121,6 @@ impl App {
         self.screen = Screen::Page(item);
     }
 
-    pub(crate) fn back(&mut self) {
-        self.screen = Screen::Menu;
-    }
-
     /// Open a file picker, starting in the directory inferred from `path_hint`.
     /// Uses yazi if available; falls back to the built-in TUI file browser.
     pub(crate) fn open_file_browser(&mut self, path_hint: &str, target: FileBrowserTarget) {

@@ -45,7 +45,6 @@ pub(super) enum GalleryWorkerMsg {
     Progress { done: usize, total: usize },
     /// All images decrypted; payload is `(entry name, raw bytes)` sorted by name.
     Ready(Vec<(String, Vec<u8>)>),
-    Failed(String),
 }
 
 // ── Sort ──────────────────────────────────────────────────────────────────
@@ -787,14 +786,6 @@ impl VaultState {
                 Ok(GalleryWorkerMsg::Ready(images)) => {
                     self.gallery_rx = None;
                     self.phase = Phase::GalleryReady { images };
-                    break;
-                }
-                Ok(GalleryWorkerMsg::Failed(msg)) => {
-                    self.gallery_rx = None;
-                    if let Some(b) = &mut self.browse {
-                        b.set_status(format!("Gallery failed: {msg}"));
-                    }
-                    self.phase = Phase::Browse;
                     break;
                 }
                 Err(_) => break,

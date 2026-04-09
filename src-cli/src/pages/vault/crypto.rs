@@ -242,6 +242,7 @@ pub(crate) fn save_vault(handle: &VaultHandle) -> Result<(), VaultError> {
 }
 
 /// Decrypt all parts of a vault entry and return the concatenated plaintext.
+#[cfg(test)]
 pub(crate) fn decrypt_entry(handle: &VaultHandle, uuid: &str) -> Result<Vec<u8>, VaultError> {
     let entry = handle
         .index

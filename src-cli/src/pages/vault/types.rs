@@ -80,6 +80,7 @@ impl VaultHandle {
 
     /// Immediate child folder names under `path` (not recursive).
     /// Returns bare names (last segment only), sorted.
+    #[cfg(test)]
     pub(crate) fn subfolders(&self, path: &str) -> Vec<String> {
         let prefix = if path.is_empty() {
             String::new()
@@ -122,6 +123,7 @@ impl VaultHandle {
 // ── Errors ────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum VaultError {
     /// Master password is incorrect or `index.lock` is corrupted.
     WrongPassword,
