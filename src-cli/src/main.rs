@@ -21,6 +21,7 @@ mod file_browser;
 mod pages;
 mod password;
 mod preview_cli;
+mod vault_list_cli;
 mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
@@ -281,6 +282,11 @@ fn main() -> io::Result<()> {
         let password = read_password();
         let vault_path = vault_dir.to_string_lossy().into_owned();
         return run_tui(Some(TuiPreload::Vault { vault_path, password }));
+    }
+
+    // ── Phase 6: --vault-list ─────────────────────────────────────────────
+    if cli.vault_list.is_some() {
+        vault_list_cli::run(&cli);
     }
 
     // Remaining modes are implemented in later phases.
