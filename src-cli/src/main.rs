@@ -22,6 +22,7 @@ mod pages;
 mod password;
 mod preview_cli;
 mod vault_list_cli;
+mod vault_op_cli;
 mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
@@ -287,6 +288,15 @@ fn main() -> io::Result<()> {
     // ── Phase 6: --vault-list ─────────────────────────────────────────────
     if cli.vault_list.is_some() {
         vault_list_cli::run(&cli);
+    }
+
+    // ── Phase 7: --vault-preview and --vault-export ───────────────────────
+    if cli.vault_preview.is_some() {
+        vault_op_cli::run_preview(&cli);
+    }
+
+    if cli.vault_export.is_some() {
+        vault_op_cli::run_export(&cli);
     }
 
     // Remaining modes are implemented in later phases.
