@@ -163,6 +163,14 @@ pub(crate) fn show_images_kitty(
         }
     }
 
+    // Delete all Kitty image placements and clear the normal screen before
+    // switching back to the alternate screen.  Without this the last image
+    // remains visible on the normal screen and reappears when the TUI exits.
+    let mut stdout = io::stdout();
+    write!(stdout, "\x1b_Ga=d\x1b\\")?;
+    execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+    stdout.flush()?;
+
     // Resume ratatui.
     execute!(terminal.backend_mut(), EnterAlternateScreen)?;
     enable_raw_mode()?;
