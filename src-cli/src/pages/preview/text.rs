@@ -16,8 +16,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
-use std::{io, io::Write as _, process::Command, time::Duration};
-use tempfile::Builder;
+use std::{io, io::Write as _, process::{Command, Stdio}, thread, time::Duration};
 
 use crate::DIM;
 use super::state::PreviewResult;
@@ -77,24 +76,23 @@ fn show_with_bat(
     bytes: &[u8],
     ext: &str,
 ) -> io::Result<()> {
-    // Write bytes to a temp file with the correct extension so bat can detect syntax.
-    let mut tmp = Builder::new()
-        .prefix("pnd-preview-")
-        .suffix(&format!(".{ext}"))
-        .tempfile()?;
-    tmp.write_all(bytes)?;
-    tmp.flush()?;
-    let (_, path) = tmp.keep().map_err(|e| io::Error::other(e.to_string()))?;
-
     // Suspend ratatui — bat (with its default `less` pager) takes over the terminal.
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-    Command::new("bat")
-        .args(["--paging=always", "-p", "--"])
-        .arg(&path)
-        .status()
-        .ok();
+    // Pipe bytes via stdin; --file-name gives bat the extension for syntax detection.
+    let mut child = Command::new("bat")
+        .args(["--paging=always", "-p", "--file-name"])
+        .arg(format!("file.{ext}"))
+        .arg("-") // read from stdin
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    let bytes_owned = bytes.to_vec();
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    let writer = thread::spawn(move || stdin.write_all(&bytes_owned));
+    child.wait().ok();
+    let _ = writer.join(); // ignore broken-pipe when the user quits early
 
     // Resume ratatui.
     execute!(terminal.backend_mut(), EnterAlternateScreen)?;

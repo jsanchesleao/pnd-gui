@@ -39,9 +39,9 @@ an error is printed and the command exits with code 2.
 
 #### Video and audio (mpv)
 
-`pnd-cli` writes the decrypted bytes to a temporary file and launches `mpv`, which takes
-over the terminal for the duration of playback. When mpv exits, `pnd-cli` resumes. If
-`mpv` is not on `$PATH`, an error is printed and the command exits with code 2.
+`pnd-cli` pipes the decrypted bytes to `mpv` via stdin, which takes over the terminal
+for the duration of playback. When mpv exits, `pnd-cli` resumes. If `mpv` is not on
+`$PATH`, an error is printed and the command exits with code 2.
 
 #### ZIP image galleries
 

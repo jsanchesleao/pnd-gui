@@ -285,13 +285,16 @@ mod tests {
 
 /// Write `bytes` to a temp file with the correct extension and open it with
 /// the system viewer asynchronously. Uses `xdg-open` on Linux/macOS and
-/// `cmd /C start` on Windows. The temp file is intentionally leaked so the
-/// system viewer has time to read it.
+/// `cmd /C start` on Windows.
+///
+/// On Linux, the file is written to `/dev/shm` (a RAM-backed tmpfs) so no
+/// data touches the disk. The file is intentionally kept alive because
+/// xdg-open spawns the viewer asynchronously and exits immediately.
 pub(super) fn open_with_xdg(bytes: &[u8], ext: &str) -> Result<(), String> {
     let mut tmp = Builder::new()
         .prefix("pnd-preview-")
         .suffix(&format!(".{ext}"))
-        .tempfile()
+        .tempfile_in(shm_or_tmp())
         .map_err(|e| e.to_string())?;
 
     tmp.write_all(bytes).map_err(|e| e.to_string())?;
@@ -312,4 +315,17 @@ pub(super) fn open_with_xdg(bytes: &[u8], ext: &str) -> Result<(), String> {
         .map_err(|e| format!("xdg-open failed: {e}"))?;
 
     Ok(())
+}
+
+/// Returns `/dev/shm` on Linux (RAM-backed tmpfs, no disk writes) when it
+/// exists, falling back to the OS temp directory on other platforms.
+fn shm_or_tmp() -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        let shm = std::path::PathBuf::from("/dev/shm");
+        if shm.exists() {
+            return shm;
+        }
+    }
+    std::env::temp_dir()
 }
