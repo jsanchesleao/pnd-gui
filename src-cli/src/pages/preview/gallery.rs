@@ -108,14 +108,12 @@ pub(crate) fn show_images_inline(
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-    // Pass no explicit dimensions so viuer fits each image to the terminal while
-    // preserving the original aspect ratio and never scaling up.
-    let viuer_config = viuer::Config {
+    // Config template — width is set per-image inside the loop so that each
+    // image is capped at its own natural cell size (never scaled up).
+    let base_config = viuer::Config {
         absolute_offset: true,
         x: 0,
         y: 0,
-        width: None,
-        height: None,
         restore_cursor: false,
         transparent: true,
         ..Default::default()
@@ -140,7 +138,9 @@ pub(crate) fn show_images_inline(
 
         match fmt.and_then(|f| image::load_from_memory_with_format(img_bytes, f).ok()) {
             Some(img) => {
-                let _ = viuer::print(&img, &viuer_config);
+                let width_cols = super::image::max_cols_for_image(img.width());
+                let config = viuer::Config { width: Some(width_cols), height: None, ..base_config.clone() };
+                let _ = viuer::print(&img, &config);
             }
             None => {
                 write!(stdout, "[Could not decode {name}]")?;

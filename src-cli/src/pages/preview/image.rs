@@ -19,6 +19,33 @@ pub(super) fn is_image_ext(ext: &str) -> bool {
     matches!(ext, "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif")
 }
 
+/// Convert image pixel dimensions to terminal cell columns, capped at the
+/// terminal width. This is the maximum number of columns viuer should use so
+/// that small images are never scaled up beyond their natural size.
+///
+/// Uses the terminal's reported pixel dimensions to derive the cell pixel size.
+/// Falls back to 8×16 px per cell (a safe conservative estimate) if the
+/// terminal does not report pixel dimensions.
+pub(super) fn max_cols_for_image(img_px_width: u32) -> u32 {
+    let (cell_px_w, _) = cell_pixel_size();
+    let term_cols = crossterm::terminal::size().map(|(c, _)| c as u32).unwrap_or(80);
+    let natural_cols = img_px_width / cell_px_w;
+    natural_cols.max(1).min(term_cols)
+}
+
+/// Returns the pixel size of one terminal cell as `(width, height)`.
+/// Queries `crossterm::terminal::window_size()`; falls back to 8×16 on failure.
+fn cell_pixel_size() -> (u32, u32) {
+    if let Ok(ws) = crossterm::terminal::window_size() {
+        if ws.width > 0 && ws.columns > 0 && ws.height > 0 && ws.rows > 0 {
+            let cw = (ws.width as u32 / ws.columns as u32).max(1);
+            let ch = (ws.height as u32 / ws.rows as u32).max(1);
+            return (cw, ch);
+        }
+    }
+    (8, 16) // safe fallback
+}
+
 /// Suspend ratatui, decode the image bytes, render inline via `viuer`
 /// (auto-selects Kitty / iTerm2 / Sixel / half-block), wait for a keypress,
 /// then resume ratatui.
@@ -45,20 +72,21 @@ pub(super) fn render_inline(
     execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(|e| e.to_string())?;
 
     let mut stdout = io::stdout();
-    // Move to the top-left corner; viuer will paint from there.
-    // We deliberately skip Clear(All) before the image to avoid a race where
-    // some terminals process the clear escape *after* the image data, producing
-    // a black screen.
-    execute!(stdout, MoveTo(0, 0)).map_err(|e| e.to_string())?;
+    // Clear the normal buffer and move to the top-left before rendering.
+    // The flush ensures the terminal processes the clear before viuer writes
+    // the image data, preventing old content from showing through.
+    execute!(stdout, Clear(ClearType::All), MoveTo(0, 0)).map_err(|e| e.to_string())?;
     stdout.flush().map_err(|e| e.to_string())?;
 
-    // Pass no explicit dimensions so viuer fits the image to the terminal while
-    // preserving the original aspect ratio and never scaling up.
+    // Cap the render width at the image's natural cell size so viuer never
+    // scales a small image up to fill the terminal. Aspect ratio is preserved
+    // by leaving height as None — viuer computes it from the width.
+    let width_cols = max_cols_for_image(img.width());
     let config = viuer::Config {
         absolute_offset: true,
         x: 0,
         y: 0,
-        width: None,
+        width: Some(width_cols),
         height: None,
         restore_cursor: false,
         transparent: true,
