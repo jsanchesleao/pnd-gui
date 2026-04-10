@@ -19,10 +19,12 @@ mod crypto;
 mod enc_dec_cli;
 mod file_browser;
 mod pages;
+mod password;
 mod preview_cli;
 mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
+use password::read_password;
 use yazi::{YaziPick, run_yazi};
 use pages::enc_dec::OpStatus;
 
@@ -503,21 +505,6 @@ fn apply_browser_multi_selection(app: &mut App, target: FileBrowserTarget, paths
         // Other targets don't support multi-select; ignore.
         _ => {}
     }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/// Read the password from `PND_PASSWORD` env var (with a warning) or from a
-/// hidden terminal prompt via `rpassword`. Exits with code 2 on I/O failure.
-fn read_password() -> String {
-    if let Ok(pw) = std::env::var("PND_PASSWORD") {
-        eprintln!("warning: using password from PND_PASSWORD environment variable");
-        return pw;
-    }
-    rpassword::prompt_password("Password: ").unwrap_or_else(|e| {
-        eprintln!("error: could not read password: {}", e);
-        process::exit(2);
-    })
 }
 
 // ── draw_menu ──────────────────────────────────────────────────────────────

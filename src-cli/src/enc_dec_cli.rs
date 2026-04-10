@@ -5,6 +5,7 @@
 //! The output is written atomically via a temp file in the same directory.
 
 use crate::cli::Cli;
+use crate::password::read_password;
 use std::{
     fs,
     io::{self, IsTerminal, Write},
@@ -166,6 +167,7 @@ pub fn run(cli: &Cli) -> ! {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Print (or overwrite) a progress line on stderr when it is a TTY.
+
 fn report_progress(tty: bool, label: &str, done: u64, total: u64) {
     if !tty || total == 0 {
         return;
@@ -175,15 +177,3 @@ fn report_progress(tty: bool, label: &str, done: u64, total: u64) {
     let _ = io::stderr().flush();
 }
 
-/// Read the password from `PND_PASSWORD` env var (with a warning) or from a
-/// hidden terminal prompt via `rpassword`.
-fn read_password() -> String {
-    if let Ok(pw) = std::env::var("PND_PASSWORD") {
-        eprintln!("warning: using password from PND_PASSWORD environment variable");
-        return pw;
-    }
-    rpassword::prompt_password("Password: ").unwrap_or_else(|e| {
-        eprintln!("error: could not read password: {}", e);
-        process::exit(2);
-    })
-}

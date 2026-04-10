@@ -251,6 +251,100 @@ field.
 
 ---
 
+### Vault — rename an entry
+
+```
+pnd-cli --vault-rename <vault-path> <new-name> [<vault-dir>]
+```
+
+Renames the entry at `<vault-path>` within the vault. Only the `name` field in the index
+is updated — no blob I/O. The entry's virtual path becomes `<parent-folder>/<new-name>`.
+
+`<new-name>` must be a bare filename with no `/` characters; use `--vault-move` to change
+the folder component.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--vault-dir <dir>` | Vault directory (default: `.`) |
+
+**Edge cases:**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| `<vault-path>` not found in index | Print error to stderr, exit 2 |
+| `<new-name>` already exists in the same folder | Print error: "A file named `<new-name>` already exists here", exit 4 |
+| `<new-name>` contains a `/` | Print error: "name must not contain `/`; use `--vault-move` to change folder", exit 3 |
+| Renaming to the same name | No-op; print confirmation; exit 0 |
+| Wrong password | Exit 1 |
+
+---
+
+### Vault — move an entry
+
+```
+pnd-cli --vault-move <vault-path> <dest-folder> [<vault-dir>]
+```
+
+Moves the entry at `<vault-path>` to `<dest-folder>` (a different virtual folder). Only
+the path prefix in the index is updated — no blob I/O. The filename is preserved; use
+`--name` to rename while moving.
+
+`<dest-folder>` is a virtual path inside the vault (e.g. `photos/summer` or `""` for
+root). Leading and trailing slashes are normalised silently.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--name <new-name>` | Rename the entry at the same time as moving it |
+| `--vault-dir <dir>` | Vault directory (default: `.`) |
+
+**Edge cases:**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| `<vault-path>` not found in index | Print error to stderr, exit 2 |
+| A file with the same name already exists at `<dest-folder>` | Print error, exit 4 |
+| `<dest-folder>` is the same as the entry's current folder (and `--name` not given) | No-op; print confirmation; exit 0 |
+| `--name` contains a `/` | Print error: "name must not contain `/`", exit 3 |
+| Wrong password | Exit 1 |
+
+---
+
+### Vault — delete entries
+
+```
+pnd-cli --vault-delete <vault-path>... [<vault-dir>]
+```
+
+Deletes one or more entries from the vault. Both the index entry and the corresponding
+blob file are removed from disk. The index is saved atomically after all deletions.
+
+When stdin is a TTY and `-y` is not given, a confirmation prompt is shown before any
+deletion takes place.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-y`, `--yes` | Skip the confirmation prompt (for scripting / non-interactive use) |
+| `--vault-dir <dir>` | Vault directory (default: `.`) |
+
+**Edge cases:**
+
+| Situation | Behaviour |
+|-----------|-----------|
+| `<vault-path>` not found in index | Print warning, skip that entry, continue with the rest; exit 2 at the end |
+| Blob file missing from disk | Remove the index entry anyway, print a warning about the orphaned blob; exit 0 |
+| Multiple paths given, one fails | Continue with remaining entries; exit 2 at the end |
+| `-y` not given and stdin is not a TTY | Print error: "stdin is not a terminal; use `-y` to confirm deletion non-interactively", exit 3 |
+| User declines the confirmation prompt | Print "Aborted."; exit 0 |
+| Wrong password | Exit 1 |
+
+---
+
 ## Global Options
 
 These flags apply to all commands:
@@ -393,6 +487,29 @@ recovery in mind (partial write → index not updated).
 
 ---
 
+### Phase 9 — `--vault-rename`, `--vault-move`, `--vault-delete`
+
+Rename and move are **pure index operations**: decrypt `index.lock`, mutate the relevant
+entry's `name` and/or path prefix in memory, save the index atomically (`.tmp` → rename).
+No blob files are read or written, so these are fast regardless of file size.
+
+Delete removes both the index entry and the corresponding blob file(s) from disk. When
+multiple entries are given, all deletions are attempted before the index is saved once
+at the end. If a blob file is missing on disk, the index entry is removed anyway so the
+vault remains self-consistent; a warning is printed.
+
+All three operations require decrypting and re-encrypting `index.lock`, so the password
+is always required.
+
+`--vault-delete` requires an explicit confirmation step (a `[y/N]` prompt on a TTY, or
+the `-y` flag for scripted use) to prevent accidental data loss.
+
+**Acceptance:** `pnd-cli --vault-rename photos/old.jpg new.jpg` renames the entry;
+`pnd-cli --vault-move photos/old.jpg archive` moves it to the `archive` folder;
+`pnd-cli --vault-delete photos/old.jpg -y` deletes it without prompting.
+
+---
+
 ## Decisions
 
 1. **Argument parsing: use `clap`**. The command surface is large enough that manual
@@ -481,3 +598,18 @@ recovery in mind (partial write → index not updated).
 - [ ] Save updated index atomically (`.tmp` → rename)
 - [ ] On multi-file add, keep successful adds even if later files fail
 - [ ] `PND_VAULT` env var recognised as default vault dir (future, note only)
+
+### Phase 9 — `--vault-rename`, `--vault-move`, `--vault-delete`
+- [ ] `--vault-rename <vault-path> <new-name>`: update `name` in index entry, save atomically
+- [ ] Reject `<new-name>` containing `/`; print clear error
+- [ ] Detect name collision at the same folder level; exit 4
+- [ ] `--vault-move <vault-path> <dest-folder>`: update path prefix in index entry, save atomically
+- [ ] `--vault-move --name <new-name>`: rename and move in a single index write
+- [ ] Detect name collision at destination folder; exit 4
+- [ ] `--vault-delete <vault-path>...`: remove index entries and blob files, save index once after all deletions
+- [ ] Prompt `"Delete N item(s)? [y/N]"` when stdin is a TTY and `-y` not given
+- [ ] `-y` / `--yes` flag bypasses the confirmation prompt
+- [ ] Exit 3 when stdin is not a TTY and `-y` is not given
+- [ ] Missing blob file on disk: remove index entry, print warning, continue
+- [ ] Not-found vault path: print warning, skip, continue; exit 2 at end
+- [ ] All three commands: index save is atomic (`.tmp` → rename)

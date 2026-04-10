@@ -6,6 +6,7 @@
 
 use crate::cli::Cli;
 use crate::pages::preview::{PreviewPhase, PreviewResult, PreviewState, render_preview};
+use crate::password::read_password;
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -202,17 +203,3 @@ pub fn run(cli: &Cli) -> ! {
     process::exit(exit_code);
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/// Read the password from `PND_PASSWORD` env var (with a warning) or from a
-/// hidden terminal prompt via `rpassword`.
-fn read_password() -> String {
-    if let Ok(pw) = std::env::var("PND_PASSWORD") {
-        eprintln!("warning: using password from PND_PASSWORD environment variable");
-        return pw;
-    }
-    rpassword::prompt_password("Password: ").unwrap_or_else(|e| {
-        eprintln!("error: could not read password: {}", e);
-        process::exit(2);
-    })
-}
