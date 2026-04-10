@@ -145,6 +145,15 @@ pub(super) fn render_kitty(
             if k.kind == KeyEventKind::Press { break; }
         }
     }
+
+    // Delete the Kitty image and clear the normal screen before switching back
+    // to the alternate screen.  Without this the image remains visible on the
+    // normal screen and bleeds through when the user exits to the shell.
+    let mut stdout = io::stdout();
+    write!(stdout, "\x1b_Ga=d\x1b\\")?;          // Kitty: delete all image placements
+    execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
+    stdout.flush()?;
+
     disable_raw_mode()?;
 
     execute!(terminal.backend_mut(), EnterAlternateScreen)?;

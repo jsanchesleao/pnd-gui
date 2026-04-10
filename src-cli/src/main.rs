@@ -21,6 +21,7 @@ mod file_browser;
 mod pages;
 mod password;
 mod preview_cli;
+mod vault_add_cli;
 mod vault_list_cli;
 mod vault_op_cli;
 mod yazi;
@@ -297,6 +298,11 @@ fn main() -> io::Result<()> {
 
     if cli.vault_export.is_some() {
         vault_op_cli::run_export(&cli);
+    }
+
+    // ── Phase 8: --vault-add ──────────────────────────────────────────────
+    if !cli.vault_add.is_empty() {
+        vault_add_cli::run_add(&cli);
     }
 
     // Remaining modes are implemented in later phases.
