@@ -73,6 +73,14 @@ pub struct Cli {
     #[arg(long, value_name = "DIR")]
     pub dest: Option<PathBuf>,
 
+    /// Include files in subfolders when exporting a vault directory
+    #[arg(short = 'r', long)]
+    pub recursive: bool,
+
+    /// Skip the confirmation prompt when exporting a vault directory
+    #[arg(short = 'y', long)]
+    pub yes: bool,
+
     // ── Positional ─────────────────────────────────────────────────────────
 
     /// File(s) to encrypt, decrypt, or preview

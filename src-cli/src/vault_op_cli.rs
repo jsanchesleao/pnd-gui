@@ -4,6 +4,10 @@
 //! After decryption:
 //!   `--vault-preview` dispatches to the existing `render_preview` pipeline.
 //!   `--vault-export`  writes the plaintext to a file on disk (atomic temp-rename).
+//!
+//! `--vault-export` also accepts a virtual folder path instead of a single file.
+//! In that case it collects all matching entries, prompts for confirmation, then
+//! exports each one.  `-r` / `--recursive` extends the collection to subfolders.
 
 use crate::cli::Cli;
 use crate::pages::vault::crypto::{decrypt_blob_with_key, open_vault};
@@ -15,7 +19,7 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
-    io,
+    io::{self, IsTerminal, Write as _},
     path::{Path, PathBuf},
     process,
 };
@@ -112,13 +116,12 @@ pub fn run_preview(cli: &Cli) -> ! {
 
 /// Run `--vault-export`.  Never returns.
 pub fn run_export(cli: &Cli) -> ! {
-    let vault_path_arg = cli.vault_export.as_deref().unwrap();
+    let vault_path_arg = cli.vault_export.as_deref().unwrap().trim_matches('/');
     let vault_dir = resolve_vault_dir(cli);
     let dest_dir = cli.dest.as_deref().unwrap_or(Path::new("."));
 
     validate_vault_dir(&vault_dir);
 
-    // ── Validate destination directory ────────────────────────────────────
     if !dest_dir.exists() || !dest_dir.is_dir() {
         eprintln!("error: destination directory does not exist: {}", dest_dir.display());
         process::exit(2);
@@ -127,10 +130,22 @@ pub fn run_export(cli: &Cli) -> ! {
     let password = read_password();
     let handle = open_vault_or_exit(&vault_dir, &password);
 
-    let (entry, _uuid) = find_entry_or_exit(&handle, vault_path_arg);
+    // Prefer an exact file match; fall back to folder export.
+    if let Some((entry, _)) = find_entry(&handle, vault_path_arg) {
+        export_single_file(&handle, entry, dest_dir, cli);
+    } else if is_vault_folder(&handle, vault_path_arg) {
+        export_directory(&handle, vault_path_arg, dest_dir, cli);
+    } else {
+        eprintln!("error: no file or folder found at vault path: {}", vault_path_arg);
+        process::exit(2);
+    }
+}
+
+// ── Single-file export ─────────────────────────────────────────────────────
+
+fn export_single_file(handle: &VaultHandle, entry: &VaultEntry, dest_dir: &Path, cli: &Cli) -> ! {
     let out_path = dest_dir.join(&entry.name);
 
-    // ── Collision check ───────────────────────────────────────────────────
     if out_path.exists() && !cli.force {
         eprintln!(
             "error: output file already exists: {} (use -f to overwrite)",
@@ -139,34 +154,156 @@ pub fn run_export(cli: &Cli) -> ! {
         process::exit(4);
     }
 
-    let bytes = decrypt_entry_or_exit(&handle, entry);
+    let bytes = decrypt_entry_or_exit(handle, entry);
+    write_atomic(&bytes, &out_path, dest_dir);
 
-    // ── Atomic write (temp file in dest dir → rename) ─────────────────────
-    let mut tmp = match tempfile::Builder::new().prefix(".pnd_").tempfile_in(dest_dir) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("error: cannot create temp file in {}: {}", dest_dir.display(), e);
-            process::exit(2);
-        }
+    let vault_path = if entry.path.is_empty() {
+        entry.name.clone()
+    } else {
+        format!("{}/{}", entry.path, entry.name)
     };
+    println!("{} → {}", vault_path, out_path.display());
+    process::exit(0);
+}
 
-    if let Err(e) = io::Write::write_all(tmp.as_file_mut(), &bytes) {
-        drop(tmp);
-        eprintln!("error: write failed: {}", e);
+// ── Directory export ───────────────────────────────────────────────────────
+
+fn export_directory(handle: &VaultHandle, folder: &str, dest_dir: &Path, cli: &Cli) -> ! {
+    // Collect matching entries.
+    let entries = collect_folder_entries(handle, folder, cli.recursive);
+
+    if entries.is_empty() {
+        eprintln!("error: no files found under vault path: {}", folder);
         process::exit(2);
     }
 
-    match tmp.persist(&out_path) {
-        Ok(_) => {
-            println!("{} → {}", vault_path_arg, out_path.display());
+    // Confirmation prompt (shown when stdin is a TTY and -y not given).
+    if !cli.yes && io::stdin().is_terminal() {
+        eprint!(
+            "Extract {} file(s) into {}? [y/N] ",
+            entries.len(),
+            dest_dir.display()
+        );
+        let _ = io::stderr().flush();
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer).ok();
+        if !answer.trim().eq_ignore_ascii_case("y") {
+            eprintln!("Aborted.");
             process::exit(0);
         }
-        Err(e) => {
-            drop(e.file);
-            eprintln!("error: could not write output: {}", e.error);
-            process::exit(2);
+    }
+
+    // Pre-flight collision check (all files, before writing anything).
+    if !cli.force {
+        let mut any_collision = false;
+        for entry in &entries {
+            let rel = relative_out_path(entry, folder);
+            let out = dest_dir.join(&rel);
+            if out.exists() {
+                eprintln!(
+                    "error: output file already exists: {} (use -f to overwrite)",
+                    out.display()
+                );
+                any_collision = true;
+            }
+        }
+        if any_collision {
+            process::exit(4);
         }
     }
+
+    // Decrypt and write each entry.
+    let mut exit_code = 0i32;
+    for entry in &entries {
+        let rel = relative_out_path(entry, folder);
+        let out = dest_dir.join(&rel);
+
+        // Create intermediate directories for recursive exports.
+        if let Some(parent) = out.parent() {
+            if !parent.exists() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    eprintln!("error: cannot create directory {}: {}", parent.display(), e);
+                    exit_code = 2;
+                    continue;
+                }
+            }
+        }
+
+        match decrypt_entry(handle, entry) {
+            Ok(bytes) => {
+                let out_parent = out.parent().unwrap_or(dest_dir);
+                write_atomic(&bytes, &out, out_parent);
+                let vault_full = if entry.path.is_empty() {
+                    entry.name.clone()
+                } else {
+                    format!("{}/{}", entry.path, entry.name)
+                };
+                println!("{} → {}", vault_full, out.display());
+            }
+            Err(msg) => {
+                eprintln!("error: {}: {}", entry.name, msg);
+                exit_code = 2;
+            }
+        }
+    }
+
+    process::exit(exit_code);
+}
+
+// ── Entry collection ───────────────────────────────────────────────────────
+
+/// Collect all entries directly inside `folder` (and, when `recursive`, in
+/// all descendant folders too).
+fn collect_folder_entries<'h>(
+    handle: &'h VaultHandle,
+    folder: &str,
+    recursive: bool,
+) -> Vec<&'h VaultEntry> {
+    handle
+        .index
+        .entries
+        .values()
+        .filter(|e| {
+            if recursive {
+                // Any path equal to folder or a descendant.
+                e.path == folder
+                    || e.path.starts_with(&format!("{}/", folder))
+                    || folder.is_empty()
+            } else {
+                e.path == folder
+            }
+        })
+        .collect()
+}
+
+/// Build the output path for `entry` relative to `folder`.
+///
+/// Examples (folder = "photos/summer"):
+///   entry.path = "photos/summer",        name = "beach.jpg"  → "beach.jpg"
+///   entry.path = "photos/summer/2023",   name = "pic.jpg"    → "2023/pic.jpg"
+fn relative_out_path(entry: &VaultEntry, folder: &str) -> PathBuf {
+    let rel_dir: &str = if folder.is_empty() {
+        // Exporting from vault root — preserve the full path.
+        &entry.path
+    } else if entry.path == folder {
+        ""
+    } else {
+        // Strip the "folder/" prefix to get the sub-path.
+        &entry.path[folder.len() + 1..]
+    };
+
+    if rel_dir.is_empty() {
+        PathBuf::from(&entry.name)
+    } else {
+        PathBuf::from(rel_dir).join(&entry.name)
+    }
+}
+
+/// Returns `true` when at least one vault entry lives under `folder`.
+fn is_vault_folder(handle: &VaultHandle, folder: &str) -> bool {
+    handle.index.entries.values().any(|e| {
+        e.path == folder || e.path.starts_with(&format!("{}/", folder))
+    })
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
@@ -211,14 +348,9 @@ fn open_vault_or_exit(vault_dir: &Path, password: &str) -> VaultHandle {
 }
 
 /// Find the entry whose full virtual path (`folder/name`) matches `vault_path`.
-///
-/// `vault_path` is matched case-sensitively. Returns `(entry, uuid)`.
-fn find_entry_or_exit<'h>(
-    handle: &'h VaultHandle,
-    vault_path: &str,
-) -> (&'h VaultEntry, &'h str) {
+/// Returns `None` when not found.
+fn find_entry<'h>(handle: &'h VaultHandle, vault_path: &str) -> Option<(&'h VaultEntry, &'h str)> {
     let vault_path = vault_path.trim_matches('/');
-
     for (uuid, entry) in &handle.index.entries {
         let full = if entry.path.is_empty() {
             entry.name.clone()
@@ -226,41 +358,69 @@ fn find_entry_or_exit<'h>(
             format!("{}/{}", entry.path, entry.name)
         };
         if full == vault_path {
-            return (entry, uuid.as_str());
+            return Some((entry, uuid.as_str()));
         }
     }
-
-    eprintln!("error: entry not found in vault: {}", vault_path);
-    process::exit(2);
+    None
 }
 
-/// Decrypt all blob parts for `entry` and return the concatenated plaintext.
-fn decrypt_entry_or_exit(handle: &VaultHandle, entry: &VaultEntry) -> Vec<u8> {
-    let mut out = Vec::with_capacity(entry.size as usize);
+/// Like `find_entry` but exits with code 2 when not found.
+fn find_entry_or_exit<'h>(
+    handle: &'h VaultHandle,
+    vault_path: &str,
+) -> (&'h VaultEntry, &'h str) {
+    find_entry(handle, vault_path).unwrap_or_else(|| {
+        eprintln!("error: entry not found in vault: {}", vault_path.trim_matches('/'));
+        process::exit(2);
+    })
+}
 
+/// Decrypt all blob parts for `entry` and return the concatenated plaintext,
+/// or an error message string.
+fn decrypt_entry(handle: &VaultHandle, entry: &VaultEntry) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(entry.size as usize);
     for part in &entry.parts {
         let blob_path = handle.blob_path(&part.uuid);
-        let blob = match std::fs::read(&blob_path) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("error: cannot read blob {}: {}", blob_path.display(), e);
-                process::exit(2);
-            }
-        };
+        let blob = std::fs::read(&blob_path)
+            .map_err(|e| format!("cannot read blob {}: {}", blob_path.display(), e))?;
         match decrypt_blob_with_key(&blob, &part.key_base64) {
             Ok(plain) => out.extend_from_slice(&plain),
             Err(VaultError::WrongPassword) => {
-                eprintln!("error: blob decryption failed (corrupted vault or wrong password)");
-                process::exit(1);
+                return Err("blob decryption failed (corrupted vault or wrong password)".into());
             }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                process::exit(2);
-            }
+            Err(e) => return Err(format!("{}", e)),
         }
     }
+    Ok(out)
+}
 
-    out
+/// Decrypt `entry` or exit on failure.
+fn decrypt_entry_or_exit(handle: &VaultHandle, entry: &VaultEntry) -> Vec<u8> {
+    decrypt_entry(handle, entry).unwrap_or_else(|msg| {
+        eprintln!("error: {}", msg);
+        process::exit(2);
+    })
+}
+
+/// Write `bytes` to `out_path` atomically (temp file in `tmp_dir` → rename).
+fn write_atomic(bytes: &[u8], out_path: &Path, tmp_dir: &Path) {
+    let mut tmp = match tempfile::Builder::new().prefix(".pnd_").tempfile_in(tmp_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: cannot create temp file in {}: {}", tmp_dir.display(), e);
+            process::exit(2);
+        }
+    };
+    if let Err(e) = tmp.as_file_mut().write_all(bytes) {
+        drop(tmp);
+        eprintln!("error: write failed: {}", e);
+        process::exit(2);
+    }
+    if let Err(e) = tmp.persist(out_path) {
+        drop(e.file);
+        eprintln!("error: could not write output: {}", e.error);
+        process::exit(2);
+    }
 }
 
 /// Extract the lowercased extension from a filename (without the leading dot).
