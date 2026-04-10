@@ -41,6 +41,18 @@ pub struct Cli {
     #[arg(long, value_name = "VAULT_PATH")]
     pub vault_export: Option<String>,
 
+    /// Rename a vault entry: --vault-rename <VAULT_PATH> <NEW_NAME>
+    #[arg(long, value_name = "VAULT_PATH NEW_NAME", num_args = 2)]
+    pub vault_rename: Vec<String>,
+
+    /// Move a vault entry to a different virtual folder: --vault-move <VAULT_PATH> <DEST_FOLDER>
+    #[arg(long, value_name = "VAULT_PATH DEST_FOLDER", num_args = 2)]
+    pub vault_move: Vec<String>,
+
+    /// Delete one or more vault entries: --vault-delete <VAULT_PATH>...
+    #[arg(long, value_name = "VAULT_PATH", num_args = 1..)]
+    pub vault_delete: Vec<String>,
+
     // ── Encrypt/decrypt options ────────────────────────────────────────────
 
     /// Write output to PATH instead of the default location
@@ -77,9 +89,15 @@ pub struct Cli {
     #[arg(short = 'r', long)]
     pub recursive: bool,
 
-    /// Skip the confirmation prompt when exporting a vault directory
+    /// Skip the confirmation prompt (for --vault-export dir and --vault-delete)
     #[arg(short = 'y', long)]
     pub yes: bool,
+
+    // ── Vault-move options ─────────────────────────────────────────────────
+
+    /// Rename the entry while moving it (used with --vault-move)
+    #[arg(long, value_name = "NEW_NAME")]
+    pub name: Option<String>,
 
     // ── Positional ─────────────────────────────────────────────────────────
 
@@ -98,5 +116,8 @@ impl Cli {
             && self.vault_preview.is_none()
             && self.vault_export.is_none()
             && self.vault_add.is_empty()
+            && self.vault_rename.is_empty()
+            && self.vault_move.is_empty()
+            && self.vault_delete.is_empty()
     }
 }

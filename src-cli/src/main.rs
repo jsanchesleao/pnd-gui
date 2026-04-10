@@ -24,6 +24,7 @@ mod preview_cli;
 mod vault_add_cli;
 mod vault_list_cli;
 mod vault_op_cli;
+mod vault_rmd_cli;
 mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
@@ -303,6 +304,19 @@ fn main() -> io::Result<()> {
     // ── Phase 8: --vault-add ──────────────────────────────────────────────
     if !cli.vault_add.is_empty() {
         vault_add_cli::run_add(&cli);
+    }
+
+    // ── Phase 9: --vault-rename, --vault-move, --vault-delete ────────────
+    if !cli.vault_rename.is_empty() {
+        vault_rmd_cli::run_rename(&cli);
+    }
+
+    if !cli.vault_move.is_empty() {
+        vault_rmd_cli::run_move(&cli);
+    }
+
+    if !cli.vault_delete.is_empty() {
+        vault_rmd_cli::run_delete(&cli);
     }
 
     // Remaining modes are implemented in later phases.
