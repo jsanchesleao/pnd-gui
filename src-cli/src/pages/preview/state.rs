@@ -110,6 +110,9 @@ impl PreviewState {
     }
 
     /// Validate inputs and spawn the decryption worker. Returns immediately.
+    ///
+    /// Accepts both `.lock` (encrypted) and plain files. For plain files the
+    /// password field is ignored and the bytes are read directly.
     pub(crate) fn start(&mut self) {
         let path = self.path.trim().to_string();
         let password = self.password.clone();
@@ -120,15 +123,12 @@ impl PreviewState {
             ));
             return;
         }
-        if password.is_empty() {
+
+        let is_encrypted = path.ends_with(".lock");
+
+        if is_encrypted && password.is_empty() {
             self.phase = PreviewPhase::Done(PreviewResult::IoError(
                 "Password cannot be empty.".into(),
-            ));
-            return;
-        }
-        if !path.ends_with(".lock") {
-            self.phase = PreviewPhase::Done(PreviewResult::IoError(
-                "File must have a .lock extension.".into(),
             ));
             return;
         }
@@ -140,33 +140,41 @@ impl PreviewState {
         self.phase = PreviewPhase::Decrypting(0);
 
         std::thread::spawn(move || {
-            let tx_prog = tx.clone();
-            let mut bytes_done = 0u64;
-            let mut on_progress = move |n: usize| {
-                bytes_done += n as u64;
-                let pct = ((bytes_done * 100) / total_bytes).min(100) as u8;
-                let _ = tx_prog.send(WorkerMsg::Progress(pct));
+            // Derive the original extension (strip ".lock" for encrypted files).
+            let original = if is_encrypted {
+                path.strip_suffix(".lock").unwrap_or(&path)
+            } else {
+                &path
             };
-
-            // Derive the original extension by stripping ".lock" then reading the extension.
-            let original = path.strip_suffix(".lock").unwrap_or(&path);
             let ext = Path::new(original)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
 
-            let result: io::Result<Vec<u8>> = (|| {
-                let mut input = std::fs::File::open(&path)?;
-                let mut buf = Vec::new();
-                let ok = crate::crypto::decrypt_file(
-                    &mut input, &mut buf, &password, &mut on_progress,
-                )?;
-                if !ok {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "wrong_password"));
-                }
-                Ok(buf)
-            })();
+            let result: io::Result<Vec<u8>> = if is_encrypted {
+                let tx_prog = tx.clone();
+                let mut bytes_done = 0u64;
+                let mut on_progress = move |n: usize| {
+                    bytes_done += n as u64;
+                    let pct = ((bytes_done * 100) / total_bytes).min(100) as u8;
+                    let _ = tx_prog.send(WorkerMsg::Progress(pct));
+                };
+                (|| {
+                    let mut input = std::fs::File::open(&path)?;
+                    let mut buf = Vec::new();
+                    let ok = crate::crypto::decrypt_file(
+                        &mut input, &mut buf, &password, &mut on_progress,
+                    )?;
+                    if !ok {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "wrong_password"));
+                    }
+                    Ok(buf)
+                })()
+            } else {
+                // Plain file — read directly, no decryption needed.
+                std::fs::read(&path)
+            };
 
             match result {
                 Ok(bytes) => {

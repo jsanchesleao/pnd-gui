@@ -19,6 +19,7 @@ mod crypto;
 mod enc_dec_cli;
 mod file_browser;
 mod pages;
+mod preview_cli;
 mod yazi;
 
 use file_browser::{FileBrowser, FileBrowserEvent, FileBrowserTarget};
@@ -245,6 +246,11 @@ fn main() -> io::Result<()> {
         enc_dec_cli::run(&cli);
     }
 
+    if cli.preview_mode {
+        // Phase 4: non-interactive preview
+        preview_cli::run(&cli);
+    }
+
     // Remaining modes are implemented in later phases.
     eprintln!("error: this mode is not yet implemented");
     process::exit(3);
@@ -279,9 +285,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, preload: Option<Tu
                 app.screen = Screen::Page(MenuItem::EncryptDecrypt);
             }
             TuiPreload::Preview(path) => {
+                let is_encrypted = path.ends_with(".lock");
                 app.preview.path = path;
-                app.preview.focus = 1; // advance to password field
                 app.screen = Screen::Page(MenuItem::Preview);
+                if !is_encrypted {
+                    // Plain file — no password needed, start preview immediately.
+                    app.preview.start();
+                } else {
+                    // Encrypted file — advance focus to the password field and wait.
+                    app.preview.focus = 1;
+                }
             }
         }
     }

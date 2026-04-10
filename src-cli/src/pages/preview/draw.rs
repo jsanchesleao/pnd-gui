@@ -40,7 +40,7 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
     // [0] info line
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "Decrypt a .lock file and preview its contents",
+            "Preview a file in-memory; .lock encrypted files are decrypted on the fly",
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ))),
         c[0],
