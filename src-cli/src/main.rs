@@ -89,6 +89,12 @@ pub(crate) struct App {
     /// Pending yazi invocation. When `Some`, the main loop runs yazi before
     /// the next draw and then clears this field.
     pub(crate) yazi_pending: Option<YaziPick>,
+    /// Set to `true` when the TUI was launched directly into the vault via
+    /// `--vault`. "Back" actions that would normally return to the main menu
+    /// quit the TUI instead.
+    pub(crate) direct_vault_launch: bool,
+    /// Set to `true` to signal the event loop to exit cleanly.
+    pub(crate) quit: bool,
 }
 
 impl App {
@@ -103,6 +109,8 @@ impl App {
             vault: pages::vault::VaultState::new(),
             file_browser: None,
             yazi_pending: None,
+            direct_vault_launch: false,
+            quit: false,
         }
     }
 
@@ -328,6 +336,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, preload: Option<Tu
                 };
                 app.vault.start_unlock();
                 app.screen = Screen::Page(MenuItem::Vault);
+                app.direct_vault_launch = true;
             }
         }
     }
@@ -449,6 +458,10 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, preload: Option<Tu
             Screen::Page(MenuItem::Vault) => {
                 pages::vault::handle_vault(&mut app, key.code)
             }
+        }
+
+        if app.quit {
+            return Ok(());
         }
     }
 }

@@ -11,7 +11,9 @@ use crate::pages::vault::state::Phase;
 
 pub(super) fn handle_vault_menu(app: &mut App, code: KeyCode) {
     match code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => { app.screen = Screen::Menu; }
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+            if app.direct_vault_launch { app.quit = true; } else { app.screen = Screen::Menu; }
+        }
         KeyCode::Up | KeyCode::Char('k') => app.vault.menu_up(),
         KeyCode::Down | KeyCode::Char('j') => app.vault.menu_down(),
         KeyCode::Enter | KeyCode::Char('l') => app.vault.menu_select(),
@@ -55,7 +57,7 @@ pub(super) fn handle_locked(app: &mut App, code: KeyCode) {
         } else {
             // Display mode: Esc goes back, picker shortcuts, Tab advances.
             match code {
-                KeyCode::Esc => { app.vault.phase = Phase::VaultMenu { cursor: 0 }; }
+                KeyCode::Esc => back_from_vault(app),
                 KeyCode::Char('t') => {
                     if let Phase::Locked { path_edit_mode, .. } = &mut app.vault.phase {
                         *path_edit_mode = true;
@@ -82,7 +84,7 @@ pub(super) fn handle_locked(app: &mut App, code: KeyCode) {
 
     // ── Password field (focus = 1) ─────────────────────────────────────────
     match code {
-        KeyCode::Esc => { app.vault.phase = Phase::VaultMenu { cursor: 0 }; }
+        KeyCode::Esc => back_from_vault(app),
         KeyCode::Tab | KeyCode::BackTab => app.vault.advance_focus(),
         KeyCode::Enter => app.vault.start_unlock(),
         KeyCode::Char(c) => {
@@ -96,6 +98,15 @@ pub(super) fn handle_locked(app: &mut App, code: KeyCode) {
             }
         }
         _ => {}
+    }
+}
+
+/// Esc out of `Locked`: quit when launched via `--vault`, else return to VaultMenu.
+fn back_from_vault(app: &mut App) {
+    if app.direct_vault_launch {
+        app.quit = true;
+    } else {
+        app.vault.phase = Phase::VaultMenu { cursor: 0 };
     }
 }
 

@@ -147,7 +147,11 @@ pub(super) fn navigate_up_or_lock(app: &mut App) {
         .unwrap_or(true);
 
     if at_root {
-        app.vault.lock();
+        if app.direct_vault_launch {
+            app.quit = true;
+        } else {
+            app.vault.lock();
+        }
     } else if let Some(b) = &mut app.vault.browse {
         b.navigate_up();
     }
