@@ -156,7 +156,7 @@ pub fn draw_preview(frame: &mut Frame, state: &PreviewState) {
                     format!("✗  Error: {msg}"),
                     Style::default().fg(FAILURE),
                 )),
-                PreviewResult::KittyShown => Line::from(Span::styled(
+                PreviewResult::InlineShown => Line::from(Span::styled(
                     "✓  Image displayed in terminal",
                     Style::default().fg(SUCCESS),
                 )),

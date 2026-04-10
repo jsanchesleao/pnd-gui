@@ -26,23 +26,14 @@ pub(crate) fn render_preview(
     };
 
     let result = if image::is_image_ext(&ext) {
-        if image::supports_kitty() {
-            // Decode at the terminal's actual pixel resolution so the image never
-            // overflows the screen and the RGBA buffer stays as small as possible.
-            let (max_w, max_h) = image::terminal_pixel_size();
-            match image::decode_rgba(&bytes, &ext, max_w, max_h) {
-                Err(e) => PreviewResult::RenderFailed(e),
-                Ok((rgba, w, h)) => match image::render_kitty(terminal, &rgba, w, h) {
-                    Ok(()) => PreviewResult::KittyShown,
-                    Err(e) => PreviewResult::RenderFailed(e.to_string()),
-                },
-            }
-        } else {
-            // xdg-open receives the original encrypted bytes; no RGBA decode needed.
-            match image::open_with_xdg(&bytes, &ext) {
+        // viuer auto-detects the best protocol (Kitty, iTerm2, Sixel, half-block)
+        // and falls back to an error only when the terminal is truly incapable.
+        match image::render_inline(terminal, &bytes, &ext) {
+            Ok(()) => PreviewResult::InlineShown,
+            Err(_) => match image::open_with_xdg(&bytes, &ext) {
                 Ok(()) => PreviewResult::XdgOpened,
                 Err(e) => PreviewResult::RenderFailed(e),
-            }
+            },
         }
     } else if media::is_media_ext(&ext) {
         match media::open_with_mpv(terminal, &bytes, &ext) {

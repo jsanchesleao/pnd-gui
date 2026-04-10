@@ -1,7 +1,7 @@
 //! ZIP image gallery preview.
 //!
-//! Kitty path: suspends ratatui, displays each image inline with keyboard navigation.
-//! Non-Kitty fallback: opens the ZIP file with xdg-open.
+//! Renders each image inline via `viuer` (Kitty / iTerm2 / Sixel / half-block)
+//! with keyboard navigation. Falls back to xdg-open on render error.
 
 use crossterm::{
     cursor::MoveTo,
@@ -10,6 +10,7 @@ use crossterm::{
     terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
                disable_raw_mode, enable_raw_mode},
 };
+use image::ImageFormat;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, io::{Read, Write as _}};
 
@@ -22,17 +23,22 @@ pub(crate) enum GalleryOutcome {
     NoImages,
 }
 
-/// Entry point. Dispatches to the Kitty inline gallery or the xdg-open fallback.
+/// Entry point. Tries inline rendering first; falls back to xdg-open on error.
 pub(super) fn show_gallery(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     bytes: &[u8],
 ) -> io::Result<GalleryOutcome> {
-    if super::image::supports_kitty() {
-        show_gallery_kitty(terminal, bytes)
-    } else {
-        super::image::open_with_xdg(bytes, "zip")
-            .map_err(|e| io::Error::other(e))?;
-        Ok(GalleryOutcome::XdgOpened)
+    let entries = extract_images(bytes)?;
+    if entries.is_empty() {
+        return Ok(GalleryOutcome::NoImages);
+    }
+    match show_images_inline(terminal, &entries) {
+        Ok(outcome) => Ok(outcome),
+        Err(_) => {
+            super::image::open_with_xdg(bytes, "zip")
+                .map_err(io::Error::other)?;
+            Ok(GalleryOutcome::XdgOpened)
+        }
     }
 }
 
@@ -80,22 +86,14 @@ fn extract_images(bytes: &[u8]) -> io::Result<Vec<(String, Vec<u8>)>> {
     Ok(entries)
 }
 
-// ── Kitty inline gallery ───────────────────────────────────────────────────
-
-fn show_gallery_kitty(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    bytes: &[u8],
-) -> io::Result<GalleryOutcome> {
-    let entries = extract_images(bytes)?;
-    if entries.is_empty() {
-        return Ok(GalleryOutcome::NoImages);
-    }
-    show_images_kitty(terminal, &entries)
-}
+// ── Inline gallery ─────────────────────────────────────────────────────────
 
 /// Display a pre-loaded slice of `(filename, raw image bytes)` as an interactive
-/// Kitty inline gallery. Suspends ratatui, runs the navigation loop, then resumes.
-pub(crate) fn show_images_kitty(
+/// inline gallery. Suspends ratatui, runs the navigation loop, then resumes.
+///
+/// `viuer` auto-selects the best image protocol for the current terminal
+/// (Kitty, iTerm2, Sixel, or half-block characters).
+pub(crate) fn show_images_inline(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     images: &[(String, Vec<u8>)],
 ) -> io::Result<GalleryOutcome> {
@@ -110,6 +108,18 @@ pub(crate) fn show_images_kitty(
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
+    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let viuer_config = viuer::Config {
+        absolute_offset: true,
+        x: 0,
+        y: 0,
+        width: Some(term_cols as u32),
+        height: Some(term_rows.saturating_sub(4) as u32),
+        restore_cursor: false,
+        transparent: true,
+        ..Default::default()
+    };
+
     loop {
         let (name, img_bytes) = &images[idx];
         let ext = entry_ext(name);
@@ -117,13 +127,22 @@ pub(crate) fn show_images_kitty(
         let mut stdout = io::stdout();
         execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
-        let (max_w, max_h) = super::image::terminal_pixel_size();
-        match super::image::decode_rgba(img_bytes, &ext, max_w, max_h) {
-            Ok((rgba, w, h)) => {
-                super::image::transmit_kitty(&mut stdout, &rgba, w, h)?;
+        let fmt = match ext.as_str() {
+            "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
+            "png"          => Some(ImageFormat::Png),
+            "gif"          => Some(ImageFormat::Gif),
+            "webp"         => Some(ImageFormat::WebP),
+            "bmp"          => Some(ImageFormat::Bmp),
+            "tiff" | "tif" => Some(ImageFormat::Tiff),
+            _              => None,
+        };
+
+        match fmt.and_then(|f| image::load_from_memory_with_format(img_bytes, f).ok()) {
+            Some(img) => {
+                let _ = viuer::print(&img, &viuer_config);
             }
-            Err(e) => {
-                write!(stdout, "[Could not decode {name}: {e}]")?;
+            None => {
+                write!(stdout, "[Could not decode {name}]")?;
             }
         }
 
@@ -163,11 +182,8 @@ pub(crate) fn show_images_kitty(
         }
     }
 
-    // Delete all Kitty image placements and clear the normal screen before
-    // switching back to the alternate screen.  Without this the last image
-    // remains visible on the normal screen and reappears when the TUI exits.
+    // Clear the normal screen before switching back to the alternate screen.
     let mut stdout = io::stdout();
-    write!(stdout, "\x1b_Ga=d\x1b\\")?;
     execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
     stdout.flush()?;
 

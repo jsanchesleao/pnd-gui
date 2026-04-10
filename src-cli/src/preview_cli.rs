@@ -187,7 +187,7 @@ pub fn run(cli: &Cli) -> ! {
                 eprintln!("error: preview failed: {msg}");
                 2
             }
-            PreviewResult::KittyShown
+            PreviewResult::InlineShown
             | PreviewResult::XdgOpened
             | PreviewResult::MpvOpened
             | PreviewResult::GalleryShown(_)

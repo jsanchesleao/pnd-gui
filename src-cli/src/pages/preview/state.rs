@@ -31,8 +31,8 @@ pub(crate) enum PreviewResult {
     NotSupported,
     WrongPassword,
     IoError(String),
-    /// Image rendered inline via the Kitty terminal graphics protocol.
-    KittyShown,
+    /// Image rendered inline in the terminal (Kitty, iTerm2, Sixel, or half-block).
+    InlineShown,
     /// Image opened in the system viewer via xdg-open.
     XdgOpened,
     RenderFailed(String),
@@ -40,9 +40,9 @@ pub(crate) enum PreviewResult {
     MpvOpened,
     /// mpv was not found on PATH; user needs to install it.
     MpvNotInstalled,
-    /// ZIP image gallery browsed inline via the Kitty protocol. Carries the image count.
+    /// ZIP image gallery browsed inline. Carries the image count.
     GalleryShown(usize),
-    /// ZIP gallery opened with xdg-open (non-Kitty terminal).
+    /// ZIP gallery opened with xdg-open.
     GalleryXdgOpened,
     /// Text file previewed (bat or ratatui viewer). Carries the line count (0 when bat was used).
     TextShown(usize),

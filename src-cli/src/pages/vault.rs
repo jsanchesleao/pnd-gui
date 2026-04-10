@@ -76,15 +76,11 @@ pub(crate) fn render_vault_gallery(
     };
 
     use crate::pages::preview::gallery::GalleryOutcome;
-    let msg: String = if crate::pages::preview::image::supports_kitty() {
-        match crate::pages::preview::gallery::show_images_kitty(terminal, &images) {
-            Ok(GalleryOutcome::Shown(n)) => format!("Gallery: {n} image(s) shown"),
-            Ok(GalleryOutcome::NoImages) => "No images to display".into(),
-            Ok(GalleryOutcome::XdgOpened) => String::new(),
-            Err(e) => format!("Gallery error: {e}"),
-        }
-    } else {
-        "Gallery requires a Kitty-compatible terminal".into()
+    let msg: String = match crate::pages::preview::gallery::show_images_inline(terminal, &images) {
+        Ok(GalleryOutcome::Shown(n)) => format!("Gallery: {n} image(s) shown"),
+        Ok(GalleryOutcome::NoImages) => "No images to display".into(),
+        Ok(GalleryOutcome::XdgOpened) => String::new(),
+        Err(e) => format!("Gallery error: {e}"),
     };
 
     if let Some(b) = &mut vault.browse {
