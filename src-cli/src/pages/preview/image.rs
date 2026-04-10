@@ -52,13 +52,14 @@ pub(super) fn render_inline(
     execute!(stdout, MoveTo(0, 0)).map_err(|e| e.to_string())?;
     stdout.flush().map_err(|e| e.to_string())?;
 
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    // Pass no explicit dimensions so viuer fits the image to the terminal while
+    // preserving the original aspect ratio and never scaling up.
     let config = viuer::Config {
         absolute_offset: true,
         x: 0,
         y: 0,
-        width: Some(term_cols as u32),
-        height: Some(term_rows.saturating_sub(3) as u32),
+        width: None,
+        height: None,
         restore_cursor: false,
         transparent: true,
         ..Default::default()

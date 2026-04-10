@@ -108,13 +108,14 @@ pub(crate) fn show_images_inline(
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    // Pass no explicit dimensions so viuer fits each image to the terminal while
+    // preserving the original aspect ratio and never scaling up.
     let viuer_config = viuer::Config {
         absolute_offset: true,
         x: 0,
         y: 0,
-        width: Some(term_cols as u32),
-        height: Some(term_rows.saturating_sub(4) as u32),
+        width: None,
+        height: None,
         restore_cursor: false,
         transparent: true,
         ..Default::default()
