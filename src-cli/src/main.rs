@@ -71,6 +71,8 @@ enum TuiPreload {
     EncDec(String),
     /// Open the Preview page with this file path already filled in.
     Preview(String),
+    /// Open the Vault page and immediately start unlocking with the given credentials.
+    Vault { vault_path: String, password: String },
 }
 
 // ── App ────────────────────────────────────────────────────────────────────
@@ -251,6 +253,26 @@ fn main() -> io::Result<()> {
         preview_cli::run(&cli);
     }
 
+    // ── Phase 5: --vault — open vault in TUI ─────────────────────────────
+    if let Some(vault_dir) = &cli.vault {
+        if !vault_dir.exists() {
+            eprintln!("error: directory not found: {}", vault_dir.display());
+            process::exit(2);
+        }
+        if !vault_dir.is_dir() {
+            eprintln!("error: {} is not a directory", vault_dir.display());
+            process::exit(3);
+        }
+        if !vault_dir.join("index.lock").exists() {
+            eprintln!("error: no vault found at {}", vault_dir.display());
+            process::exit(2);
+        }
+
+        let password = read_password();
+        let vault_path = vault_dir.to_string_lossy().into_owned();
+        return run_tui(Some(TuiPreload::Vault { vault_path, password }));
+    }
+
     // Remaining modes are implemented in later phases.
     eprintln!("error: this mode is not yet implemented");
     process::exit(3);
@@ -295,6 +317,17 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, preload: Option<Tu
                     // Encrypted file — advance focus to the password field and wait.
                     app.preview.focus = 1;
                 }
+            }
+            TuiPreload::Vault { vault_path, password } => {
+                app.vault.phase = pages::vault::Phase::Locked {
+                    vault_path,
+                    password,
+                    focus: 0,
+                    path_edit_mode: false,
+                    error: None,
+                };
+                app.vault.start_unlock();
+                app.screen = Screen::Page(MenuItem::Vault);
             }
         }
     }
@@ -457,6 +490,21 @@ fn apply_browser_multi_selection(app: &mut App, target: FileBrowserTarget, paths
         // Other targets don't support multi-select; ignore.
         _ => {}
     }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/// Read the password from `PND_PASSWORD` env var (with a warning) or from a
+/// hidden terminal prompt via `rpassword`. Exits with code 2 on I/O failure.
+fn read_password() -> String {
+    if let Ok(pw) = std::env::var("PND_PASSWORD") {
+        eprintln!("warning: using password from PND_PASSWORD environment variable");
+        return pw;
+    }
+    rpassword::prompt_password("Password: ").unwrap_or_else(|e| {
+        eprintln!("error: could not read password: {}", e);
+        process::exit(2);
+    })
 }
 
 // ── draw_menu ──────────────────────────────────────────────────────────────
