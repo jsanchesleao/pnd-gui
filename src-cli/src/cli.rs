@@ -1,6 +1,14 @@
 use clap::Parser;
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, PartialEq, clap::ValueEnum)]
+pub enum OperationMode {
+    #[value(name = "encrypt", alias = "enc", alias = "e")]
+    Encrypt,
+    #[value(name = "decrypt", alias = "dec", alias = "d")]
+    Decrypt,
+}
+
 /// Password and note depot — encrypt, decrypt, preview, and manage encrypted vaults.
 #[derive(Parser, Debug)]
 #[command(name = "pnd-cli", version, about, long_about = None)]
@@ -58,6 +66,10 @@ pub struct Cli {
     pub vault_init: Option<PathBuf>,
 
     // ── Encrypt/decrypt options ────────────────────────────────────────────
+
+    /// Explicit operation mode — required when reading from stdin (encrypt/decrypt only)
+    #[arg(short = 'm', long, value_enum)]
+    pub mode: Option<OperationMode>,
 
     /// Write output to PATH instead of the default location
     #[arg(short = 'o', value_name = "PATH")]
@@ -125,6 +137,7 @@ impl Cli {
     /// Returns true when no action is requested — the TUI should be launched.
     pub fn is_tui_mode(&self) -> bool {
         !self.stdout
+            && self.mode.is_none()
             && self.files.is_empty()
             && !self.preview_mode
             && self.vault.is_none()

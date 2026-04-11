@@ -12,7 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
-use std::{io, path::PathBuf, process, time::Duration};
+use std::{io::{self, IsTerminal}, path::PathBuf, process, time::Duration};
 
 mod cli;
 mod crypto;
@@ -236,6 +236,10 @@ fn main() -> io::Result<()> {
             eprintln!("error: --stdout is incompatible with --tui");
             process::exit(3);
         }
+        if !io::stdin().is_terminal() {
+            eprintln!("error: --tui cannot be used when stdin is a pipe");
+            process::exit(3);
+        }
         if cli.output.is_some() {
             eprintln!("warning: -o is ignored when --tui is given");
         }
@@ -250,20 +254,34 @@ fn main() -> io::Result<()> {
         return run_tui(preload);
     }
 
-    // Zero args → launch TUI (no preload).
-    if cli.is_tui_mode() {
-        return run_tui(None);
-    }
-
     // ── Dispatch non-interactive modes ────────────────────────────────────
     let has_vault_cmd = cli.vault.is_some()
         || cli.vault_list.is_some()
         || cli.vault_preview.is_some()
         || cli.vault_export.is_some()
-        || !cli.vault_add.is_empty();
+        || !cli.vault_add.is_empty()
+        || !cli.vault_rename.is_empty()
+        || !cli.vault_move.is_empty()
+        || !cli.vault_delete.is_empty()
+        || cli.vault_init.is_some();
 
-    if !cli.files.is_empty() && !cli.preview_mode && !has_vault_cmd {
-        // Phase 2: single-file encrypt / decrypt (non-interactive)
+    // Detect stdin piping: explicit "-" argument or implicit (no file, stdin not a TTY).
+    let stdin_piped = !io::stdin().is_terminal();
+    let explicit_stdin = cli.files.first().map(|p| p.as_os_str() == "-").unwrap_or(false);
+    let stdin_source = explicit_stdin || (cli.files.is_empty() && stdin_piped);
+
+    // Zero args and stdin is a TTY → launch TUI (no preload).
+    if cli.is_tui_mode() {
+        if stdin_piped {
+            // stdin is piped but no mode/command was given — user probably forgot -m.
+            eprintln!("error: stdin is not a TTY; use -m to specify encrypt or decrypt");
+            process::exit(3);
+        }
+        return run_tui(None);
+    }
+
+    // Phases 2/10-B: single-file or stdin encrypt / decrypt (non-interactive).
+    if (!cli.files.is_empty() || stdin_source) && !cli.preview_mode && !has_vault_cmd {
         enc_dec_cli::run(&cli);
     }
 
