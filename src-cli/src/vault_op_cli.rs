@@ -118,22 +118,40 @@ pub fn run_preview(cli: &Cli) -> ! {
 pub fn run_export(cli: &Cli) -> ! {
     let vault_path_arg = cli.vault_export.as_deref().unwrap().trim_matches('/');
     let vault_dir = resolve_vault_dir(cli);
-    let dest_dir = cli.dest.as_deref().unwrap_or(Path::new("."));
+
+    // ── --stdout guards ───────────────────────────────────────────────────
+    if cli.stdout && cli.recursive {
+        eprintln!("error: --stdout is incompatible with --recursive");
+        process::exit(3);
+    }
 
     validate_vault_dir(&vault_dir);
-
-    if !dest_dir.exists() || !dest_dir.is_dir() {
-        eprintln!("error: destination directory does not exist: {}", dest_dir.display());
-        process::exit(2);
-    }
 
     let password = read_password();
     let handle = open_vault_or_exit(&vault_dir, &password);
 
     // Prefer an exact file match; fall back to folder export.
     if let Some((entry, _)) = find_entry(&handle, vault_path_arg) {
-        export_single_file(&handle, entry, dest_dir, cli);
+        if cli.stdout {
+            export_single_file_stdout(&handle, entry);
+        } else {
+            let dest_dir = cli.dest.as_deref().unwrap_or(Path::new("."));
+            if !dest_dir.exists() || !dest_dir.is_dir() {
+                eprintln!("error: destination directory does not exist: {}", dest_dir.display());
+                process::exit(2);
+            }
+            export_single_file(&handle, entry, dest_dir, cli);
+        }
     } else if is_vault_folder(&handle, vault_path_arg) {
+        if cli.stdout {
+            eprintln!("error: --stdout requires a single-file vault path, not a folder");
+            process::exit(3);
+        }
+        let dest_dir = cli.dest.as_deref().unwrap_or(Path::new("."));
+        if !dest_dir.exists() || !dest_dir.is_dir() {
+            eprintln!("error: destination directory does not exist: {}", dest_dir.display());
+            process::exit(2);
+        }
         export_directory(&handle, vault_path_arg, dest_dir, cli);
     } else {
         eprintln!("error: no file or folder found at vault path: {}", vault_path_arg);
@@ -142,6 +160,15 @@ pub fn run_export(cli: &Cli) -> ! {
 }
 
 // ── Single-file export ─────────────────────────────────────────────────────
+
+fn export_single_file_stdout(handle: &VaultHandle, entry: &VaultEntry) -> ! {
+    let bytes = decrypt_entry_or_exit(handle, entry);
+    if let Err(e) = io::stdout().write_all(&bytes) {
+        eprintln!("error: write failed: {}", e);
+        process::exit(2);
+    }
+    process::exit(0);
+}
 
 fn export_single_file(handle: &VaultHandle, entry: &VaultEntry, dest_dir: &Path, cli: &Cli) -> ! {
     let out_path = dest_dir.join(&entry.name);

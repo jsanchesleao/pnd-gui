@@ -37,13 +37,62 @@ pub fn run(cli: &Cli) -> ! {
         process::exit(3);
     }
 
-    // ── Determine mode and default output path ────────────────────────────
+    // ── Determine mode ────────────────────────────────────────────────────
     let is_decrypt = input_path
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("lock"))
         .unwrap_or(false);
 
+    // ── Determine output destination ──────────────────────────────────────
+    // --stdout and -o are mutually exclusive; --stdout wins with a warning.
+    let write_to_stdout = if cli.stdout {
+        if cli.output.is_some() {
+            eprintln!("warning: -o is ignored when --stdout is given");
+        }
+        true
+    } else {
+        false
+    };
+
+    // ── Read password ─────────────────────────────────────────────────────
+    let password = read_password();
+
+    // ── Open input file ───────────────────────────────────────────────────
+    let mut input_file = match fs::File::open(input_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("error: cannot open {}: {}", input_path.display(), e);
+            process::exit(2);
+        }
+    };
+
+    let op_label = if is_decrypt { "Decrypting" } else { "Encrypting" };
+
+    if write_to_stdout {
+        // ── Stdout path: stream directly, no temp file ────────────────────
+        // Progress is suppressed — stdout carries data.
+        let mut out = io::stdout();
+        let result: io::Result<bool> = if is_decrypt {
+            crate::crypto::decrypt_file(&mut input_file, &mut out, &password, &mut |_| {})
+        } else {
+            crate::crypto::encrypt_file(&mut input_file, &mut out, &password, &mut |_| {})
+                .map(|()| true)
+        };
+        match result {
+            Err(e) => {
+                eprintln!("error: {}", e);
+                process::exit(2);
+            }
+            Ok(false) => {
+                eprintln!("error: wrong password or corrupted file");
+                process::exit(1);
+            }
+            Ok(true) => process::exit(0),
+        }
+    }
+
+    // ── File path: atomic temp-file rename ────────────────────────────────
     let default_out: PathBuf = if is_decrypt {
         input_path.with_extension("") // strip the .lock extension
     } else {
@@ -65,18 +114,6 @@ pub fn run(cli: &Cli) -> ! {
         process::exit(4);
     }
 
-    // ── Read password ─────────────────────────────────────────────────────
-    let password = read_password();
-
-    // ── Open input file ───────────────────────────────────────────────────
-    let mut input_file = match fs::File::open(input_path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("error: cannot open {}: {}", input_path.display(), e);
-            process::exit(2);
-        }
-    };
-
     // Total bytes for progress (plaintext size for encrypt; ciphertext size for
     // decrypt — close enough for a progress bar since overhead is tiny).
     let file_size = input_path.metadata().map(|m| m.len()).unwrap_or(0);
@@ -95,7 +132,6 @@ pub fn run(cli: &Cli) -> ! {
     };
 
     let stderr_tty = io::stderr().is_terminal();
-    let op_label = if is_decrypt { "Decrypting" } else { "Encrypting" };
     let mut bytes_done: u64 = 0;
 
     // ── Run crypto ────────────────────────────────────────────────────────

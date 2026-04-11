@@ -231,6 +231,10 @@ fn main() -> io::Result<()> {
 
     // ── Phase 3: --tui flag — launch TUI with optional preload ───────────
     if cli.tui {
+        if cli.stdout {
+            eprintln!("error: --stdout is incompatible with --tui");
+            process::exit(3);
+        }
         if cli.output.is_some() {
             eprintln!("warning: -o is ignored when --tui is given");
         }

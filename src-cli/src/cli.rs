@@ -63,6 +63,10 @@ pub struct Cli {
     #[arg(short = 'f', long)]
     pub force: bool,
 
+    /// Write output to stdout instead of a file
+    #[arg(short = 'c', long)]
+    pub stdout: bool,
+
     // ── Vault-list options ─────────────────────────────────────────────────
 
     /// Output vault list as a JSON array
@@ -109,7 +113,8 @@ pub struct Cli {
 impl Cli {
     /// Returns true when no action is requested — the TUI should be launched.
     pub fn is_tui_mode(&self) -> bool {
-        self.files.is_empty()
+        !self.stdout
+            && self.files.is_empty()
             && !self.preview_mode
             && self.vault.is_none()
             && self.vault_list.is_none()
