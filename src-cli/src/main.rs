@@ -22,6 +22,7 @@ mod pages;
 mod password;
 mod preview_cli;
 mod vault_add_cli;
+mod vault_init_cli;
 mod vault_list_cli;
 mod vault_op_cli;
 mod vault_rmd_cli;
@@ -321,6 +322,15 @@ fn main() -> io::Result<()> {
 
     if !cli.vault_delete.is_empty() {
         vault_rmd_cli::run_delete(&cli);
+    }
+
+    // ── Phase 10: --vault-init ────────────────────────────────────────────
+    if cli.vault_init.is_some() {
+        vault_init_cli::run(&cli);
+    }
+
+    if cli.blobs_dir.is_some() {
+        eprintln!("warning: --blobs-dir is only used with --vault-init and will be ignored");
     }
 
     // Remaining modes are implemented in later phases.

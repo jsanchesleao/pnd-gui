@@ -23,3 +23,28 @@ pub(crate) fn read_password() -> String {
         process::exit(2);
     })
 }
+
+/// Like `read_password`, but prompts twice and requires both entries to match.
+///
+/// Used for vault creation, where a typo would permanently lock the vault.
+/// `PND_PASSWORD` bypasses the confirmation (for scripted use).
+pub(crate) fn read_password_with_confirm() -> String {
+    if let Ok(pw) = std::env::var("PND_PASSWORD") {
+        eprintln!("warning: using password from PND_PASSWORD environment variable");
+        return pw;
+    }
+    loop {
+        let p1 = rpassword::prompt_password("Master password: ").unwrap_or_else(|e| {
+            eprintln!("error: could not read password: {e}");
+            process::exit(2);
+        });
+        let p2 = rpassword::prompt_password("Confirm password: ").unwrap_or_else(|e| {
+            eprintln!("error: could not read password: {e}");
+            process::exit(2);
+        });
+        if p1 == p2 {
+            return p1;
+        }
+        eprintln!("error: passwords do not match, try again");
+    }
+}

@@ -53,6 +53,10 @@ pub struct Cli {
     #[arg(long, value_name = "VAULT_PATH", num_args = 1..)]
     pub vault_delete: Vec<String>,
 
+    /// Initialise a new empty vault at [VAULT_DIR] (default: current directory)
+    #[arg(long, value_name = "VAULT_DIR", num_args = 0..=1, default_missing_value = ".")]
+    pub vault_init: Option<PathBuf>,
+
     // ── Encrypt/decrypt options ────────────────────────────────────────────
 
     /// Write output to PATH instead of the default location
@@ -76,6 +80,13 @@ pub struct Cli {
     /// Filter vault list to this virtual subfolder
     #[arg(long, value_name = "VAULT_PATH")]
     pub path: Option<String>,
+
+    // ── Vault-init options ─────────────────────────────────────────────────
+
+    /// Blobs subdirectory name inside the vault (used with --vault-init).
+    /// Leave unset to store blobs alongside index.lock.
+    #[arg(long, value_name = "NAME")]
+    pub blobs_dir: Option<String>,
 
     // ── Vault-add options ──────────────────────────────────────────────────
 
@@ -124,5 +135,6 @@ impl Cli {
             && self.vault_rename.is_empty()
             && self.vault_move.is_empty()
             && self.vault_delete.is_empty()
+            && self.vault_init.is_none()
     }
 }
