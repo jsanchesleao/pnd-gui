@@ -46,6 +46,24 @@ pnd-cli -m decrypt           # decrypt stdin → stdout or file (-o)
 
 If stdin is not a TTY and `--mode` is not given, print an error to stderr and exit 3.
 
+### Default output when stdin is piped and `-o` is not given
+
+When the input comes from stdin and neither `-o` nor `--stdout` is given, `pnd-cli`
+**implicitly writes to stdout** — exactly as if `--stdout` had been passed. This follows
+the convention of `gzip`, `xz`, `openssl enc`, and similar tools: when there is no
+filename to derive a default output path from, the natural fallback is the standard
+output stream.
+
+```bash
+# These two are equivalent:
+cat file.txt | PND_PASSWORD=pw pnd-cli -m encrypt --stdout > file.txt.lock
+cat file.txt | PND_PASSWORD=pw pnd-cli -m encrypt          > file.txt.lock
+```
+
+If the user also passes `-o PATH` when stdin is the source, that takes precedence and
+the output is written to the named file (atomic temp-rename, same as the normal file-to-file
+path). Passing both `-o` and `--stdout` is still an error (see the edge cases table).
+
 ### Why `--ext` is required for preview
 
 The preview pipeline dispatches on file extension (image → Kitty, video → mpv, text →
@@ -253,14 +271,23 @@ the existing `-o` + `--tui` precedence pattern).
   - When stdin source: skip the `metadata().len()` call; use byte-count-only progress.
   - Open `io::stdin()` as the reader instead of `fs::File::open`.
 
-- Detect stdout sink: `cli.stdout`.
-  - When stdout sink: write directly to `io::stdout()`; skip temp-file/rename path.
-  - When stdout sink: suppress progress output unconditionally.
-  - When stdout sink: on failure, print error to stderr and exit — partial bytes have
-    already been sent; no cleanup is possible.
+- Detect stdout sink: `cli.stdout` **or** (stdin source and `cli.output.is_none()`).
+  In code, compute a local `write_to_stdout: bool` flag early in the function:
+  ```rust
+  let write_to_stdout = cli.stdout || (stdin_source && cli.output.is_none());
+  ```
+  This means `-o PATH` always wins when given, and `--stdout` is an explicit override
+  for all other cases. The rest of the function branches on `write_to_stdout`.
 
-- Output path logic when `--stdout` is set: skip all output-path collision checks and
-  the `-o` flag entirely (with a warning if `-o` was also given).
+- When `write_to_stdout`:
+  - Write directly to `io::stdout()`; skip temp-file/rename path.
+  - Suppress progress output unconditionally.
+  - On failure, print error to stderr and exit — partial bytes have already been sent;
+    no cleanup is possible.
+
+- Output path logic when `write_to_stdout` is set: skip all output-path collision checks
+  and the `-o` flag entirely (with a warning if both `-o` and `--stdout` were given
+  explicitly by the user).
 
 ### 3. `src/preview_cli.rs` — stdin source and `--ext`
 
@@ -330,6 +357,7 @@ does not consume stdin.
 
 | Situation | Expected behaviour |
 |---|---|
+| stdin piped, `-m` given, no `-o` and no `--stdout` | implicitly write to stdout (same as `--stdout`); progress suppressed |
 | `--mode` not given when stdin is not a TTY | stderr error: "stdin is not a TTY; use -m to specify encrypt or decrypt", exit 3 |
 | `-p` without `--ext` when stdin is not a TTY | stderr error: "--ext is required when piping into -p", exit 3 |
 | `--vault-add -` without `--name` | stderr error: "--name is required when adding from stdin", exit 3 |
@@ -381,10 +409,19 @@ echo "data" | PND_PASSWORD=correct pnd-cli -m encrypt --stdout \
 ### Encrypt from stdin to file
 
 ```bash
-# 4. Output to named file
+# 4a. Output to named file via -o
 echo "test" | PND_PASSWORD=pw pnd-cli -m encrypt -o out.lock
 pnd-cli out.lock   # decrypt interactively, enter "pw"
 # Expected: file out.lock created; decryption yields "test\n"
+
+# 4b. No -o and no --stdout: implicit stdout, captured with shell redirect
+echo "test" | PND_PASSWORD=pw pnd-cli -m encrypt > out.lock
+PND_PASSWORD=pw pnd-cli -m decrypt --stdout < out.lock
+# Expected: "test\n" printed; out.lock contains a valid ciphertext
+
+# 4c. Confirm -o takes precedence over implicit stdout
+echo "test" | PND_PASSWORD=pw pnd-cli -m encrypt -o explicit.lock
+# Expected: explicit.lock written; nothing on stdout
 ```
 
 ### Decrypt from file to stdout
@@ -487,8 +524,12 @@ Scope: reading from stdin for the encrypt/decrypt command. Depends on 10-A for t
 2. In `enc_dec_cli.rs`:
    - Detect stdin source (`files.is_empty()` and stdin not a TTY, or `files[0] == "-"`).
    - When stdin: require `--mode`; use `io::stdin()` as reader; use byte-count progress.
+   - Compute `write_to_stdout = cli.stdout || (stdin_source && cli.output.is_none())`.
+     This makes `-o PATH` the only way to write to a named file when stdin is the source;
+     omitting `-o` naturally routes output to stdout.
    - Reject `--tui` when stdin is a pipe.
-3. Tests: roundtrip via `Command` with `stdin(Stdio::piped())`.
+3. Tests: roundtrip via `Command` with `stdin(Stdio::piped())`; also test that omitting
+   `-o` produces output on stdout while passing `-o out.lock` creates the named file.
 
 **Acceptance:** `echo "hello" | PND_PASSWORD=pw pnd-cli -m encrypt --stdout | PND_PASSWORD=pw pnd-cli -m decrypt --stdout` prints `hello`.
 
