@@ -91,6 +91,61 @@ PND_PASSWORD=secret pnd-cli --vault-add ~/photos/*.jpg \
   --vault-path photos/2024 --vault-dir ~/vaults/personal
 ```
 
+## Piping input and output
+
+`pnd-cli` supports Unix-style piping on both axes.
+
+### Encrypt / decrypt via pipe
+
+```bash
+# Encrypt from stdin → stdout (implicit when no -o given)
+cat report.pdf | PND_PASSWORD=secret pnd-cli -m encrypt > report.pdf.lock
+
+# Decrypt from stdin → stdout
+cat report.pdf.lock | PND_PASSWORD=secret pnd-cli -m decrypt
+
+# Chain: decrypt, transform, re-encrypt
+cat old.lock \
+  | PND_PASSWORD=oldpass pnd-cli -m decrypt --stdout \
+  | sed 's/DRAFT/FINAL/g' \
+  | PND_PASSWORD=newpass pnd-cli -m encrypt --stdout \
+  > final.lock
+
+# Decrypt to stdout and pipe to another tool
+pnd-cli report.pdf.lock --stdout | grep "invoice"
+```
+
+When stdin is the source and `-o` is omitted, output goes to stdout automatically
+(same as passing `--stdout`). Pass `-o PATH` to write to a named file instead.
+`--mode` / `-m` is always required when reading from stdin.
+
+### Preview from stdin
+
+```bash
+# Preview an encrypted image piped from stdin
+cat photo.jpg.lock | PND_PASSWORD=secret pnd-cli -p --ext jpg -m decrypt
+
+# Preview a plain text file piped from stdin (no password needed)
+curl -s https://example.com/doc.txt | pnd-cli -p --ext txt
+```
+
+`--ext` is required when piping into `-p`; it tells the preview dispatcher which
+viewer to use. Add `-m decrypt` when the stream is encrypted.
+
+### Add vault entries from stdin
+
+```bash
+# Store the output of a command directly in the vault
+date | PND_PASSWORD=secret pnd-cli --vault-add - --name timestamp.txt
+
+# Copy a vault entry from one vault to another
+PND_PASSWORD=pw pnd-cli --vault-export report.pdf --stdout \
+  | PND_PASSWORD=pw pnd-cli --vault-add - --name report.pdf \
+      --vault-dir ~/vaults/backup
+```
+
+`--name` is required when the source is `-`.
+
 ## Non-interactive delete
 
 The `-y` flag is required when stdin is not a TTY. Without it, the command exits 3 to

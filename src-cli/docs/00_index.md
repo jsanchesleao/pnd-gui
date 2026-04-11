@@ -19,15 +19,18 @@
 ## Quick reference
 
 ```
-pnd-cli                                        # TUI main menu
-pnd-cli <file>                                 # encrypt or decrypt
-pnd-cli -p <file>                              # preview
-pnd-cli --vault [dir]                          # vault TUI browser
-pnd-cli --vault-list [dir] [--json] [--path P] # list vault contents
-pnd-cli --vault-preview <vault-path> [dir]     # preview vault entry
-pnd-cli --vault-export <vault-path> [--dest D] # export vault entry
-pnd-cli --vault-add <file>... [--vault-path P] # add files to vault
-pnd-cli --vault-rename <vault-path> <name>     # rename vault entry
-pnd-cli --vault-move <vault-path> <folder>     # move vault entry
-pnd-cli --vault-delete <vault-path>... [-y]    # delete vault entries
+pnd-cli                                              # TUI main menu
+pnd-cli <file>                                       # encrypt or decrypt
+pnd-cli -m <enc|dec> [--stdout]                      # encrypt/decrypt from stdin
+pnd-cli -p <file>                                    # preview
+pnd-cli -p --ext <EXT> [-m decrypt]                  # preview from stdin
+pnd-cli --vault [dir]                                # vault TUI browser
+pnd-cli --vault-list [dir] [--json] [--path P]       # list vault contents
+pnd-cli --vault-preview <vault-path> [dir]           # preview vault entry
+pnd-cli --vault-export <vault-path> [--stdout]       # export vault entry
+pnd-cli --vault-add <file>... [--vault-path P]       # add files to vault
+pnd-cli --vault-add - --name <NAME>                  # add from stdin
+pnd-cli --vault-rename <vault-path> <name>           # rename vault entry
+pnd-cli --vault-move <vault-path> <folder>           # move vault entry
+pnd-cli --vault-delete <vault-path>... [-y]          # delete vault entries
 ```

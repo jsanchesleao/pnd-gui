@@ -71,6 +71,10 @@ pub struct Cli {
     #[arg(short = 'm', long, value_enum)]
     pub mode: Option<OperationMode>,
 
+    /// File extension for stdin preview dispatch (e.g. "jpg", "mp3") — required when piping into -p
+    #[arg(long, value_name = "EXT")]
+    pub ext: Option<String>,
+
     /// Write output to PATH instead of the default location
     #[arg(short = 'o', value_name = "PATH")]
     pub output: Option<PathBuf>,
@@ -122,7 +126,8 @@ pub struct Cli {
 
     // ── Vault-move options ─────────────────────────────────────────────────
 
-    /// Rename the entry while moving it (used with --vault-move)
+    /// Name for the vault entry (used with --vault-move to rename while moving,
+    /// and with --vault-add - when reading from stdin)
     #[arg(long, value_name = "NEW_NAME")]
     pub name: Option<String>,
 

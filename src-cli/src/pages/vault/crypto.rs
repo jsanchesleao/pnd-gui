@@ -261,16 +261,18 @@ pub(crate) fn decrypt_entry(handle: &VaultHandle, uuid: &str) -> Result<Vec<u8>,
     Ok(out)
 }
 
-/// Encrypt one file from disk and write its blob(s) to `blobs_dir`.
+/// Encrypt a byte slice and write its blob(s) to `blobs_dir`.
 ///
-/// Large files (> 256 MiB) are split into multiple parts, each encrypted with
+/// Large inputs (> 256 MiB) are split into multiple parts, each encrypted with
 /// an independent random AES-256 key. Returns a `(file_uuid, VaultEntry)` pair
 /// ready to be inserted into the vault index.
 ///
+/// `name` is the filename to store in the index entry.
 /// `virtual_path` is the vault folder path where the file will appear (use `""`
 /// for the vault root).
-pub(crate) fn encrypt_file_to_vault(
-    file_path: &Path,
+pub(crate) fn encrypt_bytes_to_vault(
+    data: &[u8],
+    name: &str,
     blobs_dir: &Path,
     virtual_path: &str,
 ) -> Result<(String, super::types::VaultEntry), VaultError> {
@@ -278,14 +280,7 @@ pub(crate) fn encrypt_file_to_vault(
 
     const BLOCK_SIZE: usize = 256 * 1024 * 1024; // 256 MiB
 
-    let name = file_path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let data = std::fs::read(file_path)?;
     let size = data.len() as u64;
-
     let file_uuid = generate_uuid();
     let mut parts: Vec<VaultPart> = Vec::new();
 
@@ -307,7 +302,7 @@ pub(crate) fn encrypt_file_to_vault(
     }
 
     let entry = VaultEntry {
-        name,
+        name: name.to_string(),
         path: virtual_path.to_string(),
         size,
         parts,
@@ -316,6 +311,29 @@ pub(crate) fn encrypt_file_to_vault(
     };
 
     Ok((file_uuid, entry))
+}
+
+/// Encrypt one file from disk and write its blob(s) to `blobs_dir`.
+///
+/// Reads the file, derives the entry name from the filename, then delegates to
+/// [`encrypt_bytes_to_vault`]. Returns a `(file_uuid, VaultEntry)` pair ready
+/// to be inserted into the vault index.
+///
+/// `virtual_path` is the vault folder path where the file will appear (use `""`
+/// for the vault root).
+pub(crate) fn encrypt_file_to_vault(
+    file_path: &Path,
+    blobs_dir: &Path,
+    virtual_path: &str,
+) -> Result<(String, super::types::VaultEntry), VaultError> {
+    let name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let data = std::fs::read(file_path)?;
+
+    encrypt_bytes_to_vault(&data, &name, blobs_dir, virtual_path)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────

@@ -1,14 +1,19 @@
-//! Non-interactive vault-add (Phase 8).
+//! Non-interactive vault-add (Phases 8 and 10-D).
 //!
 //! Encrypts one or more local files and adds them to the vault index.
 //! On multi-file add, files successfully added before a failure are kept;
 //! the failed file and any remaining files are skipped and the exit code is 2.
+//!
+//! Phase 10-D adds stdin support: `--vault-add -` reads from stdin and requires
+//! `--name` to supply the vault entry name. Mixing `-` with real file paths is
+//! an error; multiple `-` sources in one invocation are also an error.
 
 use crate::cli::Cli;
-use crate::pages::vault::crypto::{encrypt_file_to_vault, open_vault, save_vault};
+use crate::pages::vault::crypto::{encrypt_bytes_to_vault, encrypt_file_to_vault, open_vault, save_vault};
 use crate::pages::vault::types::{VaultError, VaultHandle};
 use crate::password::read_password;
 use std::{
+    io::{self, Read},
     path::{Path, PathBuf},
     process,
 };
@@ -21,6 +26,63 @@ pub fn run_add(cli: &Cli) -> ! {
     let vault_dir = resolve_vault_dir(cli);
     let vault_path = normalize_vault_path(cli.vault_path.as_deref().unwrap_or(""));
 
+    // ── Stdin source detection (Phase 10-D) ───────────────────────────────
+    let stdin_positions: Vec<_> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.as_os_str() == "-")
+        .map(|(i, _)| i)
+        .collect();
+
+    if !stdin_positions.is_empty() {
+        // Cannot mix stdin with real file paths.
+        if files.len() > 1 {
+            eprintln!("error: cannot combine stdin source (-) with other files");
+            process::exit(3);
+        }
+        // Require --name when source is stdin.
+        let entry_name = match &cli.name {
+            Some(n) => n.clone(),
+            None => {
+                eprintln!("error: --name is required when adding from stdin");
+                process::exit(3);
+            }
+        };
+
+        validate_vault_dir(&vault_dir);
+        let password = read_password();
+        let mut handle = open_vault_or_exit(&vault_dir, &password);
+
+        let mut stdin_bytes = Vec::new();
+        if let Err(e) = io::stdin().read_to_end(&mut stdin_bytes) {
+            eprintln!("error: cannot read stdin: {}", e);
+            process::exit(2);
+        }
+
+        match add_stdin_bytes(&mut handle, &stdin_bytes, &entry_name, &vault_path, cli.force) {
+            Ok(added_path) => {
+                println!("stdin → vault:{}", added_path);
+                process::exit(0);
+            }
+            Err(AddError::NameCollision(name)) => {
+                eprintln!(
+                    "error: a file named '{}' already exists at vault:{} (use -f to replace)",
+                    name, vault_path
+                );
+                process::exit(2);
+            }
+            Err(AddError::Vault(msg)) => {
+                eprintln!("error: {}", msg);
+                process::exit(2);
+            }
+            Err(e) => {
+                eprintln!("error: {:?}", e);
+                process::exit(2);
+            }
+        }
+    }
+
+    // ── Regular file source ───────────────────────────────────────────────
     validate_vault_dir(&vault_dir);
 
     let password = read_password();
@@ -120,6 +182,44 @@ fn add_one_file(
 
     // Save the updated index atomically after each successful add so that
     // earlier files are persisted even if a later file fails.
+    save_vault(handle).map_err(|e| AddError::Vault(e.to_string()))?;
+
+    Ok(full_path)
+}
+
+/// Encrypt an in-memory byte slice and insert it into the vault at `vault_path`.
+///
+/// The entry's name comes from `entry_name` (supplied via `--name` on the CLI).
+/// Collision detection and forced replacement work identically to `add_one_file`.
+fn add_stdin_bytes(
+    handle: &mut VaultHandle,
+    bytes: &[u8],
+    entry_name: &str,
+    vault_path: &str,
+    force: bool,
+) -> Result<String, AddError> {
+    // Collision detection.
+    let existing_uuid = find_entry_by_name(handle, vault_path, entry_name);
+    if let Some(ref uuid) = existing_uuid {
+        if !force {
+            return Err(AddError::NameCollision(entry_name.to_string()));
+        }
+        remove_entry_blobs(handle, uuid);
+        handle.index.entries.shift_remove(uuid);
+    }
+
+    let (file_uuid, entry) =
+        encrypt_bytes_to_vault(bytes, entry_name, &handle.blobs_dir, vault_path)
+            .map_err(|e| AddError::Vault(e.to_string()))?;
+
+    let full_path = if vault_path.is_empty() {
+        entry.name.clone()
+    } else {
+        format!("{}/{}", vault_path, entry.name)
+    };
+
+    handle.index.entries.insert(file_uuid, entry);
+
     save_vault(handle).map_err(|e| AddError::Vault(e.to_string()))?;
 
     Ok(full_path)

@@ -1,10 +1,14 @@
-//! Non-interactive file preview (Phase 4).
+//! Non-interactive file preview (Phases 4 and 10-C).
 //!
 //! Decrypts a `.lock` file into memory (never to disk) and dispatches to the
 //! existing `render_preview` pipeline (Kitty / mpv / bat / gallery).
 //! Plain (non-encrypted) files are read directly without prompting for a password.
+//!
+//! Phase 10-C adds stdin source support: when stdin is not a TTY (or the explicit
+//! `-` argument is given), `--ext` must be supplied to identify the file type.
+//! Whether to decrypt is determined by `--mode decrypt` being present.
 
-use crate::cli::Cli;
+use crate::cli::{Cli, OperationMode};
 use crate::pages::preview::{PreviewPhase, PreviewResult, PreviewState, render_preview};
 use crate::password::read_password;
 use crossterm::{
@@ -14,7 +18,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     fs,
-    io::{self, IsTerminal, Write},
+    io::{self, IsTerminal, Read, Write},
     path::Path,
     process,
 };
@@ -23,6 +27,16 @@ use std::{
 
 /// Run non-interactive preview.  Never returns — always calls `process::exit`.
 pub fn run(cli: &Cli) -> ! {
+    // ── Detect stdin source ───────────────────────────────────────────────
+    let explicit_stdin = cli.files.first().map(|p| p.as_os_str() == "-").unwrap_or(false);
+    let implicit_stdin = cli.files.is_empty() && !io::stdin().is_terminal();
+    let stdin_source = explicit_stdin || implicit_stdin;
+
+    if stdin_source {
+        run_stdin(cli);
+    }
+
+    // ── File source ───────────────────────────────────────────────────────
     if cli.files.is_empty() {
         eprintln!("error: -p/--preview requires a file argument");
         process::exit(3);
@@ -127,7 +141,60 @@ pub fn run(cli: &Cli) -> ! {
         }
     };
 
-    // ── Initialise a terminal for the render pipeline ─────────────────────
+    render_and_exit(bytes, ext);
+}
+
+// ── Stdin path (Phase 10-C) ────────────────────────────────────────────────
+
+/// Handle `-p` when the input comes from stdin.  Never returns.
+fn run_stdin(cli: &Cli) -> ! {
+    // --ext is required when reading from stdin.
+    let ext = match &cli.ext {
+        Some(e) => e.to_ascii_lowercase(),
+        None => {
+            eprintln!("error: --ext is required when piping into -p");
+            process::exit(3);
+        }
+    };
+
+    // Whether to decrypt: --mode decrypt (or -m d) must be given explicitly.
+    let is_encrypted = matches!(cli.mode, Some(OperationMode::Decrypt));
+
+    let bytes: Vec<u8> = if is_encrypted {
+        let password = read_password();
+        let mut input = io::stdin();
+        let mut buf = Vec::new();
+
+        let result = crate::crypto::decrypt_file(&mut input, &mut buf, &password, &mut |_| {});
+
+        match result {
+            Err(e) => {
+                eprintln!("error: {}", e);
+                process::exit(2);
+            }
+            Ok(false) => {
+                eprintln!("error: wrong password or corrupted file");
+                process::exit(1);
+            }
+            Ok(true) => buf,
+        }
+    } else {
+        // Plain stdin — read all bytes directly.
+        let mut buf = Vec::new();
+        if let Err(e) = io::stdin().read_to_end(&mut buf) {
+            eprintln!("error: cannot read stdin: {}", e);
+            process::exit(2);
+        }
+        buf
+    };
+
+    render_and_exit(bytes, ext);
+}
+
+// ── Shared render pipeline ─────────────────────────────────────────────────
+
+/// Set up the terminal, run the preview pipeline, tear down, and exit. Never returns.
+fn render_and_exit(bytes: Vec<u8>, ext: String) -> ! {
     if let Err(e) = enable_raw_mode() {
         eprintln!("error: could not enable raw mode: {}", e);
         process::exit(2);
@@ -202,4 +269,3 @@ pub fn run(cli: &Cli) -> ! {
 
     process::exit(exit_code);
 }
-

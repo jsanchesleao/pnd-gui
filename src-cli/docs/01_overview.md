@@ -10,12 +10,15 @@ desktop GUI application, so files created by one tool are fully interoperable wi
 |---|---|
 | `pnd-cli` | Interactive TUI (main menu) |
 | `pnd-cli <file>` | Non-interactive encrypt or decrypt |
+| `pnd-cli -m <enc\|dec> [--stdout]` | Encrypt or decrypt from stdin |
 | `pnd-cli -p <file>` | Non-interactive file preview |
+| `pnd-cli -p --ext <EXT> [-m decrypt]` | Preview from stdin |
 | `pnd-cli --vault [dir]` | Open vault in the TUI |
 | `pnd-cli --vault-list [dir]` | List vault contents |
 | `pnd-cli --vault-preview <path>` | Preview a vault entry |
-| `pnd-cli --vault-export <path>` | Export a vault entry to disk |
+| `pnd-cli --vault-export <path> [--stdout]` | Export a vault entry to disk or stdout |
 | `pnd-cli --vault-add <file>...` | Add files to a vault |
+| `pnd-cli --vault-add - --name <name>` | Add stdin content to a vault |
 | `pnd-cli --vault-rename <path> <name>` | Rename a vault entry |
 | `pnd-cli --vault-move <path> <folder>` | Move a vault entry |
 | `pnd-cli --vault-delete <path>...` | Delete vault entries |

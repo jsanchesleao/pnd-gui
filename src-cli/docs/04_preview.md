@@ -5,6 +5,8 @@
 ```
 pnd-cli -p [OPTIONS] <file>
 pnd-cli --preview [OPTIONS] <file>
+pnd-cli -p --ext <EXT> [-m decrypt]          # read from stdin
+pnd-cli -p --ext <EXT> [-m decrypt] -        # explicit stdin
 ```
 
 ## Description
@@ -15,6 +17,11 @@ stripping the `.lock` suffix for encrypted files).
 
 If `<file>` does not have a `.lock` extension it is treated as a plain unencrypted file:
 the content is read directly and no password is required.
+
+When reading from **stdin** (no file argument, or `-` as the file) the extension cannot
+be inferred from a filename, so `--ext` is required. Whether to decrypt the stream is
+determined by `--mode decrypt` / `-m decrypt`; without that flag the bytes are treated as
+plain (unencrypted) data.
 
 ### Viewer dispatch
 
@@ -73,6 +80,8 @@ Built-in viewer keys:
 
 | Flag | Description |
 |---|---|
+| `--ext <EXT>` | File extension for dispatch when reading from stdin (bare, no leading dot) |
+| `-m`, `--mode decrypt` | Treat stdin bytes as encrypted — required when piping a `.lock` stream |
 | `-t`, `--tui` | Open the TUI Preview screen with `<file>` pre-loaded instead of running non-interactively |
 
 ## Examples
@@ -89,6 +98,12 @@ pnd-cli -p movie.mp4.lock
 
 # Open the TUI Preview screen with the file pre-loaded
 pnd-cli -p --tui document.pdf.lock
+
+# Pipe an encrypted image for preview
+cat photo.jpg.lock | PND_PASSWORD=s3cr3t pnd-cli -p --ext jpg -m decrypt
+
+# Pipe a plain text file (no password needed)
+cat README.md | pnd-cli -p --ext md
 ```
 
 ## Edge cases
@@ -97,6 +112,7 @@ pnd-cli -p --tui document.pdf.lock
 |---|---|
 | `<file>` does not exist | stderr error, exit 2 |
 | `<file>` is a directory | stderr error, exit 3 |
+| stdin piped, `--ext` not given | stderr error, exit 3 |
 | Wrong password | stderr error, exit 1 |
 | Unsupported file type | "No previewer for `.<ext>` files"; exit 0 |
 | mpv not installed (media file) | Install hint on stderr; exit 2 |

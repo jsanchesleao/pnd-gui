@@ -36,11 +36,11 @@ Each non-interactive command lives in its own `src/<name>_cli.rs` file. All entr
 
 | Module | Flag | Description |
 |---|---|---|
-| `enc_dec_cli.rs` | `<FILE>` (positional) | Encrypt or decrypt a single file. Mode auto-detected from `.lock` extension. |
-| `preview_cli.rs` | `-p` / `--preview` | Decrypt a file to memory and open a preview. |
+| `enc_dec_cli.rs` | `<FILE>` (positional) | Encrypt or decrypt a single file or stdin stream. Mode auto-detected from `.lock` extension; `--mode` / `-m` required when reading from stdin. |
+| `preview_cli.rs` | `-p` / `--preview` | Decrypt a file or stdin stream to memory and open a preview. `--ext` required when reading from stdin. |
 | `vault_init_cli.rs` | `--vault-init [DIR]` | Create a new empty vault. Prompts password twice. |
 | `vault_list_cli.rs` | `--vault-list [DIR]` | List vault contents; supports `--json` and `--path`. |
-| `vault_add_cli.rs` | `--vault-add FILE...` | Encrypt files and add them to the vault. |
+| `vault_add_cli.rs` | `--vault-add FILE...` | Encrypt files and add them to the vault. Accepts `-` as a source to read from stdin; `--name` required in that case. |
 | `vault_op_cli.rs` | `--vault-preview`, `--vault-export` | Preview or export a vault entry. |
 | `vault_rmd_cli.rs` | `--vault-rename`, `--vault-move`, `--vault-delete` | Index-only mutations. |
 
@@ -58,8 +58,9 @@ Each non-interactive command lives in its own `src/<name>_cli.rs` file. All entr
 - `read_password()` — single prompt; honours `PND_PASSWORD` env var (warns on stderr). Used by all commands that open an existing vault or decrypt a file.
 - `read_password_with_confirm()` — prompts twice and loops until both entries match; `PND_PASSWORD` bypasses confirmation. Used only by `--vault-init` where a typo would permanently lock the vault.
 
-### `--stdout` / `-c` flag (Phase 10-A)
+### Piping (Phases 10-A through 10-D)
 
+#### `--stdout` / `-c` (Phase 10-A)
 Added to `enc_dec_cli.rs` and `vault_op_cli.rs`. When set:
 - Output is written directly to `io::stdout()` — no temp file or atomic rename.
 - Progress output is suppressed unconditionally.
@@ -67,6 +68,15 @@ Added to `enc_dec_cli.rs` and `vault_op_cli.rs`. When set:
 - `--stdout` + `--tui` → exit 3.
 - `--vault-export --stdout` on a folder path → exit 3.
 - `--vault-export --stdout -r` → exit 3.
+
+#### `--mode` / `-m` and stdin enc/dec (Phase 10-B)
+`enc_dec_cli.rs` detects stdin source when `cli.files` is empty and stdin is not a TTY, or when `cli.files[0] == "-"`. `--mode` is required in that case. Output routing: `write_to_stdout = cli.stdout || (stdin_source && cli.output.is_none())` — passing `-o PATH` is the only way to write to a named file from stdin.
+
+#### `--ext` and stdin preview (Phase 10-C)
+`preview_cli.rs` uses the same stdin-detection pattern. `--ext` (bare extension, no dot) is required when stdin is the source. `--mode decrypt` triggers decryption; without it the bytes are treated as plain. The render pipeline is extracted into a shared `render_and_exit(bytes, ext)` helper used by both the file and stdin paths.
+
+#### `--vault-add -` and stdin vault-add (Phase 10-D)
+`vault_add_cli.rs` detects `-` in `cli.vault_add`. Mixing `-` with real paths → exit 3. `--name` is required for the entry name. Bytes are read into memory then passed to `encrypt_bytes_to_vault` (in `pages/vault/crypto.rs`), which is the byte-slice equivalent of `encrypt_file_to_vault`. `encrypt_file_to_vault` now delegates to it.
 
 ### File browser overlay (`src/file_browser.rs`)
 
@@ -87,7 +97,8 @@ The most complex page; has its own crypto module separate from the top-level `sr
 - `create_vault(root, blobs_dir_name, password)` — writes initial `index.lock`; `blobs_dir_name = None` stores blobs alongside the index.
 - `open_vault(root, password)` — decrypts and parses `index.lock`.
 - `save_vault(handle)` — re-encrypts the in-memory index atomically (`index.lock.tmp` → rename).
-- `encrypt_file_to_vault(path, blobs_dir, vault_path)` — encrypts a file into blob(s) and returns a `VaultEntry`.
+- `encrypt_bytes_to_vault(data, name, blobs_dir, vault_path)` — core blob-writing function; accepts a `&[u8]` and an explicit name string.
+- `encrypt_file_to_vault(path, blobs_dir, vault_path)` — reads the file, extracts the filename, then delegates to `encrypt_bytes_to_vault`.
 
 **`VaultState` phase machine** (`state.rs`):
 - `VaultMenu` → `Locked` / `Creating` → `Opening` → `Browse`
@@ -121,5 +132,8 @@ Overlay popups use `centered_popup(area, percent_w, height)`. The minimum height
 |---|---|
 | `tests/stdout_smoke.rs` | `--stdout` / `-c` flag on encrypt, decrypt, and vault-export |
 | `tests/vault_init_smoke.rs` | `--vault-init`, `--blobs-dir`, and vault-export `--stdout` happy path |
+| `tests/stdin_smoke.rs` | stdin encrypt/decrypt via `--mode` / `-m`; implicit stdout; `-o` routing |
+| `tests/preview_stdin_smoke.rs` | stdin preview via `--ext`; encrypted and plain streams; error paths |
+| `tests/vault_stdin_smoke.rs` | `--vault-add -` stdin source; `--name` requirement; collision; force-replace |
 
-Integration tests invoke the compiled binary via `std::process::Command` and use `PND_PASSWORD` to avoid interactive prompts. Use this pattern when adding new integration tests for CLI commands.
+Integration tests invoke the compiled binary via `std::process::Command` and use `PND_PASSWORD` to avoid interactive prompts. Tests that need piped stdin use `stdin(Stdio::piped())` and write bytes via the child's stdin handle. Ignore broken-pipe errors when writing — the child may exit early on a usage error before consuming input.
